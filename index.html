@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ski Bum</title>
+    <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+    <div id="app">
+        <div class="game-container">
+            <canvas id="gameCanvas"></canvas>
+            <!-- Menu button -->
+            <button id="menuButton" class="menu-button">☰</button>
+            <!-- Retry button -->
+            <button id="retryButton" class="retry-button" style="display: none;">Retry</button>
+            <!-- Menu overlay -->
+            <div id="menuOverlay" class="menu-overlay" style="display: none;">
+                <div class="menu-panel">
+                    <button id="menuCloseButton" class="menu-close-button">×</button>
+                    <h2>Controls</h2>
+                    <div class="controls-list">
+                        <div class="control-item">
+                            <span class="key">←</span>
+                            <span class="action">
+                                <div>Move Left</div>
+                                <div class="hint">Double-press: Aggressive Turn</div>
+                            </span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key">→</span>
+                            <span class="action">
+                                <div>Move Right</div>
+                                <div class="hint">Double-press: Aggressive Turn</div>
+                            </span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key">↓</span>
+                            <span class="action">
+                                <div>Speed Boost</div>
+                                <div class="hint">Double-press: 2x Speed</div>
+                            </span>
+                        </div>
+                        <div class="control-item">
+                            <span class="key">↑</span>
+                            <span class="action">Stop</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
+
