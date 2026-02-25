@@ -108,4 +108,4 @@ npm run preview  # Preview production build
 
 ## License
 
-Unlicensed — use as you like.
+MIT — see `LICENSE`.
