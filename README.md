@@ -17,12 +17,12 @@ Then open the URL Vite prints (usually `http://localhost:5173`).
 
 ## Controls
 
-| Key | Action |
-| --- | --- |
-| `←` | Move left (double-press for aggressive turn) |
-| `→` | Move right (double-press for aggressive turn) |
-| `↓` | Speed boost (double-press for 2× speed) |
-| `↑` | Stop scrolling |
+| Key | Action | Notes |
+| :--: | --- | --- |
+| `←` | Move left | Double-press for aggressive turn |
+| `→` | Move right | Double-press for aggressive turn |
+| `↓` | Speed boost | Double-press for 2× speed |
+| `↑` | Stop scrolling | — |
 
 Use the **☰** menu button in-game to view controls at any time. A **Retry** button appears after you crash or finish the run.
 
