@@ -3,6 +3,8 @@ import { GameState } from './types';
 import { Tree } from './tree';
 import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
+import { BASE_SCROLL_SPEED } from './constants';
+const SPAWN_GAP = 220; // world units behind the player at spawn
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -12,8 +14,8 @@ export class Game {
   private gameState: GameState;
   private animationFrameId: number | null = null;
   private worldOffset: number = 0; // How far we've scrolled
-  private baseScrollSpeed: number = 1.7; // Base auto-scroll speed (reduced by 15% from 2)
-  private currentScrollSpeed: number = 1.7; // Current scroll speed (can be boosted) (reduced by 15% from 2)
+  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed
+  private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (can be boosted)
   private isSpeedBoosted: boolean = false; // Track if speed is boosted
   private trees: Tree[] = []; // Array of trees
   private courseGenerator: CourseGenerator; // Course generator
@@ -24,6 +26,8 @@ export class Game {
   private retryButton: HTMLButtonElement | null = null; // Retry button DOM element
   private menuOverlay: HTMLDivElement | null = null; // Menu overlay DOM element
   private menuCloseButton: HTMLButtonElement | null = null; // Menu close button DOM element
+  private lastFrameTime: number | null = null; // For normalized dt updates
+  private debugHudEnabled: boolean = false;
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -59,10 +63,10 @@ export class Game {
       this.canvas.height / 3  // Upper third of screen
     );
 
-    // Abominable snowman starts off-screen and chases the skier (screen space)
+    // Abominable snowman starts behind the skier in world space
     this.abominableSnowman = new AbominableSnowman(
       this.canvas.width / 2,
-      this.canvas.height + 80
+      this.worldOffset - SPAWN_GAP
     );
 
     // Initialize course generator
@@ -380,10 +384,8 @@ export class Game {
     );
 
     // Reset abominable snowman
-    this.abominableSnowman = new AbominableSnowman(
-      this.canvas.width / 2,
-      this.canvas.height + 80
-    );
+    this.abominableSnowman.position.x = this.canvas.width / 2;
+    this.abominableSnowman.reset(this.worldOffset, SPAWN_GAP);
 
     // Reload course
     this.trees = [];
@@ -464,6 +466,10 @@ export class Game {
           // Stop scrolling
           this.currentScrollSpeed = 0;
           break;
+        case 'h':
+        case 'H':
+          this.debugHudEnabled = !this.debugHudEnabled;
+          break;
       }
     });
   }
@@ -493,7 +499,10 @@ export class Game {
   start(): void {
     if (this.gameState.isRunning) return;
     
+    this.abominableSnowman.position.x = this.canvas.width / 2;
+    this.abominableSnowman.reset(this.worldOffset, SPAWN_GAP);
     this.gameState.isRunning = true;
+    this.lastFrameTime = null;
     this.gameLoop();
   }
 
@@ -505,16 +514,23 @@ export class Game {
     }
   }
 
-  private gameLoop(): void {
+  private gameLoop(timestamp: number = performance.now()): void {
     if (!this.gameState.isRunning) return;
 
-    this.update();
+    let dt = 1;
+    if (this.lastFrameTime !== null) {
+      const deltaMs = timestamp - this.lastFrameTime;
+      dt = Math.min(2, deltaMs / (1000 / 60));
+    }
+    this.lastFrameTime = timestamp;
+
+    this.update(dt);
     this.render();
 
-    this.animationFrameId = requestAnimationFrame(() => this.gameLoop());
+    this.animationFrameId = requestAnimationFrame((t) => this.gameLoop(t));
   }
 
-  private update(): void {
+  private update(dt: number): void {
     // Don't update game logic when complete or crashed, but still allow UI interactions
     if (this.gameState.runComplete || this.gameState.crashed) {
       // Stop scrolling when complete or crashed
@@ -524,7 +540,7 @@ export class Game {
 
     // World scrolls automatically (unless stopped)
     if (this.currentScrollSpeed > 0) {
-      this.worldOffset += this.currentScrollSpeed;
+      this.worldOffset += this.currentScrollSpeed * dt;
       this.gameState.distanceTraveled = this.worldOffset;
     }
 
@@ -535,7 +551,17 @@ export class Game {
     this.skier.position.y = fixedY; // Lock Y position
 
     // Update abominable snowman (chase skier)
-    this.abominableSnowman.update(this.skier.position);
+    const snowmanCaught = this.abominableSnowman.update(
+      this.skier.position.x,
+      this.worldOffset,
+      this.currentScrollSpeed,
+      dt
+    );
+    if (snowmanCaught) {
+      this.gameState.crashed = true;
+      this.currentScrollSpeed = 0;
+      return;
+    }
 
     // Check for collisions with trees
     this.checkCollisions();
@@ -568,20 +594,6 @@ export class Game {
     const skierRight = skierX + this.skier.width / 2;
     const skierTop = skierY - this.skier.height / 2;
     const skierBottom = skierY + this.skier.height / 2;
-
-    // Abominable snowman collision (screen space)
-    if (
-      this.abominableSnowman.intersectsRect({
-        x: skierLeft,
-        y: skierTop,
-        width: this.skier.width,
-        height: this.skier.height
-      })
-    ) {
-      this.gameState.crashed = true;
-      this.currentScrollSpeed = 0;
-      return;
-    }
 
     // Check collision with each tree
     for (const tree of this.trees) {
@@ -628,7 +640,7 @@ export class Game {
     this.skier.draw(this.ctx);
 
     // Draw abominable snowman in screen space (not affected by camera)
-    this.abominableSnowman.draw(this.ctx);
+    this.abominableSnowman.draw(this.ctx, this.worldOffset, this.skier.position.y);
 
     // Draw UI (not affected by camera)
     this.drawUI();
@@ -717,15 +729,61 @@ export class Game {
         this.retryButton.style.display = 'none';
       }
     }
+
+    this.drawDebugHud();
+  }
+
+  private drawDebugHud(): void {
+    if (!this.debugHudEnabled) return;
+
+    const playerWorldY = this.worldOffset;
+    const snowmanWorldY = this.abominableSnowman.getWorldY();
+    const snowmanGap = Math.round(playerWorldY - snowmanWorldY);
+    const sectionName = this.currentCourse
+      ? this.courseGenerator.getSectionNameAt(this.gameState.distanceTraveled, this.currentCourse)
+      : '(unknown)';
+
+    const lines = [
+      `Snowman gap: ${snowmanGap}`,
+      `Section: ${sectionName || '(unknown)'}`,
+      `Base speed: ${this.baseScrollSpeed.toFixed(2)}`,
+      `Current speed: ${this.currentScrollSpeed.toFixed(2)}`,
+      `Boosted: ${this.isSpeedBoosted ? 'true' : 'false'}`
+    ];
+
+    const padding = 10;
+    const lineHeight = 16;
+    const margin = 10;
+
+    this.ctx.save();
+    this.ctx.font = '12px monospace';
+    this.ctx.textBaseline = 'top';
+
+    let maxWidth = 0;
+    for (const line of lines) {
+      const width = this.ctx.measureText(line).width;
+      if (width > maxWidth) maxWidth = width;
+    }
+
+    const panelWidth = maxWidth + padding * 2;
+    const panelHeight = lines.length * lineHeight + padding * 2;
+    const panelX = this.canvas.width - panelWidth - margin;
+    const panelY = margin;
+
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    this.ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+
+    this.ctx.fillStyle = '#FFFFFF';
+    let textY = panelY + padding;
+    for (const line of lines) {
+      this.ctx.fillText(line, panelX + padding, textY);
+      textY += lineHeight;
+    }
+
+    this.ctx.restore();
   }
 
 }
-
-
-
-
-
-
 
 
 
