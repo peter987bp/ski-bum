@@ -7,6 +7,7 @@ export interface CourseObject {
 }
 
 export interface CourseSection {
+  name: string; // Section display name
   startY: number; // Start Y position in world space
   endY: number; // End Y position in world space
   objects: CourseObject[]; // Objects in this section
@@ -36,6 +37,7 @@ export class CourseGenerator {
 
     // Section 1: Easy start - sparse trees
     sections.push({
+      name: 'Easy Start',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createSparseTrees(currentY, currentY + sectionLength),
@@ -45,6 +47,7 @@ export class CourseGenerator {
 
     // Section 2: Medium difficulty - gates (trees on sides, clear middle)
     sections.push({
+      name: 'Gates',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createGatePattern(currentY, currentY + sectionLength),
@@ -54,6 +57,7 @@ export class CourseGenerator {
 
     // Section 3: Dense section - more trees
     sections.push({
+      name: 'Dense',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createDenseTrees(currentY, currentY + sectionLength),
@@ -63,6 +67,7 @@ export class CourseGenerator {
 
     // Section 4: Zigzag pattern
     sections.push({
+      name: 'Zigzag',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createZigzagPattern(currentY, currentY + sectionLength),
@@ -72,6 +77,7 @@ export class CourseGenerator {
 
     // Section 5: Narrow gaps - harder
     sections.push({
+      name: 'Narrow Gaps',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createNarrowGaps(currentY, currentY + sectionLength),
@@ -81,6 +87,7 @@ export class CourseGenerator {
 
     // Section 6: Very dense - very hard
     sections.push({
+      name: 'Very Dense',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createVeryDense(currentY, currentY + sectionLength),
@@ -90,6 +97,7 @@ export class CourseGenerator {
 
     // Section 7: Alternating walls - extreme difficulty
     sections.push({
+      name: 'Alternating Walls',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createAlternatingWalls(currentY, currentY + sectionLength),
@@ -99,6 +107,7 @@ export class CourseGenerator {
 
     // Section 8: Final challenge - tight zigzag
     sections.push({
+      name: 'Final Zigzag',
       startY: currentY,
       endY: currentY + sectionLength,
       objects: this.createTightZigzag(currentY, currentY + sectionLength),
@@ -435,5 +444,19 @@ export class CourseGenerator {
     
     return allObjects;
   }
-}
 
+  getSectionNameAt(distance: number, course: Course): string {
+    for (const section of course.sections) {
+      if (distance >= section.startY && distance < section.endY) {
+        return section.name || '(unknown)';
+      }
+    }
+
+    const lastSection = course.sections[course.sections.length - 1];
+    if (lastSection && distance >= lastSection.startY) {
+      return lastSection.name || '(unknown)';
+    }
+
+    return '(unknown)';
+  }
+}
