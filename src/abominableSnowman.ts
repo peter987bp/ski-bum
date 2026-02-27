@@ -6,6 +6,8 @@ const CLOSE_RANGE_DISTANCE = 160; // distance behind where catchup ramps in
 const MIN_CATCHUP = 0.6;
 const MAX_CATCHUP = 4.0;
 const CATCH_THRESHOLD = 18; // world units; when within this, the player is caught
+const CHASE_RAMP_START = 0.62; // course progress to begin real chase
+const CHASE_RAMP_END = 0.8; // course progress to reach full chase
 
 export class AbominableSnowman {
   position: Position; // screen-space position (x/y)
@@ -24,7 +26,13 @@ export class AbominableSnowman {
     this.worldY = playerWorldY - spawnGap;
   }
 
-  update(targetX: number, playerWorldY: number, playerScrollSpeed: number, dt: number): boolean {
+  update(
+    targetX: number,
+    playerWorldY: number,
+    playerScrollSpeed: number,
+    dt: number,
+    courseProgress: number
+  ): boolean {
     // Horizontal chase stays in screen space
     const dx = targetX - this.position.x;
     if (Math.abs(dx) > 0.001) {
@@ -40,8 +48,10 @@ export class AbominableSnowman {
     const gapFactor = clamp01(1 - gap / CLOSE_RANGE_DISTANCE);
     const slowFactor = clamp01(1 - safeScrollSpeed / BASE_SCROLL_SPEED);
     const fastFactor = clamp01(safeScrollSpeed / BASE_SCROLL_SPEED);
+    const chaseRamp = clamp01((courseProgress - CHASE_RAMP_START) / (CHASE_RAMP_END - CHASE_RAMP_START));
+    const catchupStrength = lerp(0, 1, chaseRamp);
     const catchup = lerp(MIN_CATCHUP, MAX_CATCHUP, clamp01(0.65 * gapFactor + 0.35 * slowFactor));
-    const chaseSpeed = Math.max(0, safeScrollSpeed + catchup * (1 - 0.35 * fastFactor));
+    const chaseSpeed = Math.max(0, safeScrollSpeed + catchup * catchupStrength * (1 - 0.35 * fastFactor));
 
     this.worldY += chaseSpeed * dt;
 

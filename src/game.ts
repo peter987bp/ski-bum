@@ -542,7 +542,8 @@ export class Game {
       return;
     }
 
-    this.updateScrollSpeedRamp();
+    const distanceProgress = this.getDistanceProgress();
+    this.updateScrollSpeedRamp(distanceProgress);
 
     // World scrolls automatically (unless stopped)
     if (this.currentScrollSpeed > 0) {
@@ -561,7 +562,8 @@ export class Game {
       this.skier.position.x,
       this.worldOffset,
       this.currentScrollSpeed,
-      dt
+      dt,
+      distanceProgress
     );
     if (snowmanCaught) {
       this.gameState.crashed = true;
@@ -591,10 +593,7 @@ export class Game {
     if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
   }
 
-  private updateScrollSpeedRamp(): void {
-    const distanceProgress = this.gameState.targetDistance > 0
-      ? Math.min(1, Math.max(0, this.gameState.distanceTraveled / this.gameState.targetDistance))
-      : 0;
+  private updateScrollSpeedRamp(distanceProgress: number): void {
     const previousBaseSpeed = this.baseScrollSpeed;
 
     this.baseScrollSpeed = this.startingScrollSpeed +
@@ -606,6 +605,11 @@ export class Game {
         : 1;
       this.currentScrollSpeed = this.baseScrollSpeed * speedMultiplier;
     }
+  }
+
+  private getDistanceProgress(): number {
+    if (this.gameState.targetDistance <= 0) return 0;
+    return Math.min(1, Math.max(0, this.gameState.distanceTraveled / this.gameState.targetDistance));
   }
 
   private checkCollisions(): void {
@@ -807,6 +811,5 @@ export class Game {
   }
 
 }
-
 
 
