@@ -5,6 +5,7 @@ import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
 import { BASE_SCROLL_SPEED } from './constants';
 const SPAWN_GAP = 220; // world units behind the player at spawn
+const MAX_SPEED_INCREASE_FACTOR = 0.35;
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -14,8 +15,10 @@ export class Game {
   private gameState: GameState;
   private animationFrameId: number | null = null;
   private worldOffset: number = 0; // How far we've scrolled
-  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed
+  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (ramped)
   private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (can be boosted)
+  private readonly startingScrollSpeed: number = BASE_SCROLL_SPEED;
+  private readonly maxScrollSpeedIncrease: number = BASE_SCROLL_SPEED * MAX_SPEED_INCREASE_FACTOR;
   private isSpeedBoosted: boolean = false; // Track if speed is boosted
   private trees: Tree[] = []; // Array of trees
   private courseGenerator: CourseGenerator; // Course generator
@@ -374,6 +377,7 @@ export class Game {
 
     // Reset world
     this.worldOffset = 0;
+    this.baseScrollSpeed = this.startingScrollSpeed;
     this.currentScrollSpeed = this.baseScrollSpeed;
     this.isSpeedBoosted = false;
 
@@ -538,6 +542,8 @@ export class Game {
       return;
     }
 
+    this.updateScrollSpeedRamp();
+
     // World scrolls automatically (unless stopped)
     if (this.currentScrollSpeed > 0) {
       this.worldOffset += this.currentScrollSpeed * dt;
@@ -583,6 +589,23 @@ export class Game {
     // Keep skier within horizontal bounds only
     if (this.skier.position.x < 0) this.skier.position.x = 0;
     if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
+  }
+
+  private updateScrollSpeedRamp(): void {
+    const distanceProgress = this.gameState.targetDistance > 0
+      ? Math.min(1, Math.max(0, this.gameState.distanceTraveled / this.gameState.targetDistance))
+      : 0;
+    const previousBaseSpeed = this.baseScrollSpeed;
+
+    this.baseScrollSpeed = this.startingScrollSpeed +
+      (distanceProgress * this.maxScrollSpeedIncrease);
+
+    if (this.currentScrollSpeed > 0) {
+      const speedMultiplier = previousBaseSpeed > 0
+        ? this.currentScrollSpeed / previousBaseSpeed
+        : 1;
+      this.currentScrollSpeed = this.baseScrollSpeed * speedMultiplier;
+    }
   }
 
   private checkCollisions(): void {
@@ -784,7 +807,6 @@ export class Game {
   }
 
 }
-
 
 
 

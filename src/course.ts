@@ -20,6 +20,9 @@ export interface Course {
   totalLength: number; // Total course length
 }
 
+const EARLY_SAFE_MIN_X = 0.32;
+const EARLY_SAFE_MAX_X = 0.68;
+
 export class CourseGenerator {
   private canvasWidth: number;
 
@@ -34,6 +37,8 @@ export class CourseGenerator {
     const sections: CourseSection[] = [];
     let currentY = 0;
     const sectionLength = 500; // Length of each section
+    const earlyGateSpacingScale = 1.3;
+    const midGateSpacingScale = 1.1;
 
     // Section 1: Easy start - sparse trees
     sections.push({
@@ -50,18 +55,18 @@ export class CourseGenerator {
       name: 'Gates',
       startY: currentY,
       endY: currentY + sectionLength,
-      objects: this.createGatePattern(currentY, currentY + sectionLength),
+      objects: this.createGatePattern(currentY, currentY + sectionLength, earlyGateSpacingScale),
       pattern: 'gates'
     });
     currentY += sectionLength;
 
-    // Section 3: Dense section - more trees
+    // Section 3: Building rhythm - slightly tighter gates
     sections.push({
-      name: 'Dense',
+      name: 'Flowing Gates',
       startY: currentY,
       endY: currentY + sectionLength,
-      objects: this.createDenseTrees(currentY, currentY + sectionLength),
-      pattern: 'dense'
+      objects: this.createGatePattern(currentY, currentY + sectionLength, midGateSpacingScale),
+      pattern: 'gates'
     });
     currentY += sectionLength;
 
@@ -128,11 +133,13 @@ export class CourseGenerator {
   private createSparseTrees(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 100;
-    const baseSpacing = 180;
+    const baseSpacing = 235;
+    const safeMinX = EARLY_SAFE_MIN_X;
+    const safeMaxX = EARLY_SAFE_MAX_X;
     
     while (y < endY) {
       // Vary spacing naturally (not uniform)
-      const spacing = baseSpacing + (Math.random() * 60 - 30); // ±30px variation
+      const spacing = baseSpacing + (Math.random() * 80 - 40); // ±40px variation
       
       // Create gentle curve using sine wave
       const progress = (y - startY) / (endY - startY);
@@ -142,8 +149,12 @@ export class CourseGenerator {
       const leftX = 0.15 + curve + (Math.random() * 0.05 - 0.025);
       const rightX = 0.85 + curve + (Math.random() * 0.05 - 0.025);
       
-      objects.push({ type: 'tree', x: Math.max(0.1, Math.min(0.9, leftX)), y });
-      objects.push({ type: 'tree', x: Math.max(0.1, Math.min(0.9, rightX)), y });
+      // Keep a guaranteed clear corridor in early sections
+      const safeLeftX = Math.max(0.1, Math.min(safeMinX, leftX));
+      const safeRightX = Math.min(0.9, Math.max(safeMaxX, rightX));
+      
+      objects.push({ type: 'tree', x: safeLeftX, y });
+      objects.push({ type: 'tree', x: safeRightX, y });
       
       y += spacing;
     }
@@ -154,15 +165,21 @@ export class CourseGenerator {
   /**
    * Create flowing gate pattern (trees on sides, clear middle path)
    */
-  private createGatePattern(startY: number, endY: number): CourseObject[] {
+  private createGatePattern(startY: number, endY: number, spacingScale: number = 1): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 100;
-    const baseSpacing = 130;
+    const baseSpacing = 130 * spacingScale;
+    const spacingJitter = 40 * spacingScale;
+    const safeMinX = EARLY_SAFE_MIN_X;
+    const safeMaxX = EARLY_SAFE_MAX_X;
+    const maxLeftBaseX = safeMinX - 0.12;
+    const minRightBaseX = safeMaxX;
+    const maxRightBaseX = 0.84;
     let gateSide = 0; // 0 = left, 1 = right
     
     while (y < endY) {
       // Vary spacing
-      const spacing = baseSpacing + (Math.random() * 40 - 20);
+      const spacing = baseSpacing + (Math.random() * spacingJitter - spacingJitter / 2);
       
       // Create flowing curve
       const progress = (y - startY) / (endY - startY);
@@ -170,14 +187,16 @@ export class CourseGenerator {
       
       if (gateSide === 0) {
         // Left gate with curve
-        const baseX = 0.2 + curve;
-        objects.push({ type: 'tree', x: Math.max(0.1, baseX), y });
-        objects.push({ type: 'tree', x: Math.max(0.1, baseX + 0.1), y });
+        const baseX = 0.18 + curve;
+        const clampedBaseX = Math.max(0.08, Math.min(maxLeftBaseX, baseX));
+        objects.push({ type: 'tree', x: Math.max(0.1, clampedBaseX), y });
+        objects.push({ type: 'tree', x: Math.max(0.1, clampedBaseX + 0.1), y });
       } else {
         // Right gate with curve
-        const baseX = 0.7 + curve;
-        objects.push({ type: 'tree', x: Math.min(0.9, baseX), y });
-        objects.push({ type: 'tree', x: Math.min(0.9, baseX + 0.1), y });
+        const baseX = 0.72 + curve;
+        const clampedBaseX = Math.min(maxRightBaseX, Math.max(minRightBaseX, baseX));
+        objects.push({ type: 'tree', x: Math.min(0.9, clampedBaseX), y });
+        objects.push({ type: 'tree', x: Math.min(0.9, clampedBaseX + 0.1), y });
       }
       
       gateSide = 1 - gateSide; // Alternate
@@ -231,16 +250,16 @@ export class CourseGenerator {
   private createZigzagPattern(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 80;
-    const baseSpacing = 95;
+    const baseSpacing = 115;
     let side = 0; // 0 = left, 1 = right
     
     while (y < endY) {
       // Vary spacing for natural feel
-      const spacing = baseSpacing + (Math.random() * 25 - 12);
+      const spacing = baseSpacing + (Math.random() * 36 - 18);
       
       // Create smooth transition between sides (not abrupt)
       const progress = (y - startY) / (endY - startY);
-      const transition = Math.sin(progress * Math.PI * 6) * 0.25; // Smooth transitions
+      const transition = Math.sin(progress * Math.PI * 6) * 0.22; // Smooth transitions
       
       if (side === 0) {
         // Left side with smooth curve
@@ -255,7 +274,7 @@ export class CourseGenerator {
       }
       
       // Gradually transition sides
-      if (Math.random() < 0.3) { // 30% chance to switch sides
+      if (Math.random() < 0.25) { // 25% chance to switch sides
         side = 1 - side;
       }
       
