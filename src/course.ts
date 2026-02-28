@@ -212,19 +212,19 @@ export class CourseGenerator {
   private createDenseTrees(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 80;
-    const baseSpacing = 85;
+    const baseSpacing = 110;
     
     while (y < endY) {
       // Vary spacing organically
-      const spacing = baseSpacing + (Math.random() * 30 - 15);
+      const spacing = baseSpacing + (Math.random() * 40 - 20);
       
       // Create sweeping curve
       const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 4) * 0.2; // Sweeping S-curve
+      const curve = Math.sin(progress * Math.PI * 4) * 0.18; // Sweeping S-curve
       
       // Place trees along the curve with variation
-      const numTrees = 2 + Math.floor(Math.random() * 2); // 2-3 trees
-      const basePositions = [0.2, 0.4, 0.6, 0.8];
+      const numTrees = 2 + Math.floor(Math.random() * 1.5); // 2-3 trees (lean toward 2)
+      const basePositions = [0.2, 0.45, 0.7, 0.85];
       
       // Select positions and add curve
       const selected: number[] = [];
@@ -250,16 +250,16 @@ export class CourseGenerator {
   private createZigzagPattern(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 80;
-    const baseSpacing = 115;
+    const baseSpacing = 140;
     let side = 0; // 0 = left, 1 = right
     
     while (y < endY) {
       // Vary spacing for natural feel
-      const spacing = baseSpacing + (Math.random() * 36 - 18);
+      const spacing = baseSpacing + (Math.random() * 40 - 20);
       
       // Create smooth transition between sides (not abrupt)
       const progress = (y - startY) / (endY - startY);
-      const transition = Math.sin(progress * Math.PI * 6) * 0.22; // Smooth transitions
+      const transition = Math.sin(progress * Math.PI * 6) * 0.2; // Smooth transitions
       
       if (side === 0) {
         // Left side with smooth curve
@@ -274,7 +274,7 @@ export class CourseGenerator {
       }
       
       // Gradually transition sides
-      if (Math.random() < 0.25) { // 25% chance to switch sides
+      if (Math.random() < 0.22) { // 22% chance to switch sides
         side = 1 - side;
       }
       
@@ -290,31 +290,31 @@ export class CourseGenerator {
   private createNarrowGaps(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 80;
-    const baseSpacing = 95;
+    const baseSpacing = 125;
     let patternType = 0;
     
     while (y < endY) {
-      const spacing = baseSpacing + (Math.random() * 20 - 10);
+      const spacing = baseSpacing + (Math.random() * 24 - 12);
       const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 5) * 0.2; // Flowing curve
+      const curve = Math.sin(progress * Math.PI * 5) * 0.18; // Flowing curve
       
       if (patternType === 0) {
         // Left side with narrow gap - flowing
-        const leftBase = 0.2 + curve;
-        const rightBase = 0.7 + curve;
+        const leftBase = 0.18 + curve;
+        const rightBase = 0.76 + curve;
         objects.push({ type: 'tree', x: Math.max(0.1, leftBase), y });
         objects.push({ type: 'tree', x: Math.max(0.1, leftBase + 0.1), y });
         objects.push({ type: 'tree', x: Math.min(0.9, rightBase), y });
-        objects.push({ type: 'tree', x: Math.min(0.9, rightBase + 0.1), y });
+        objects.push({ type: 'tree', x: Math.min(0.9, rightBase + 0.08), y });
       } else if (patternType === 1) {
         // Center gap - flowing
         const centerCurve = curve * 0.5;
-        objects.push({ type: 'tree', x: Math.max(0.1, 0.15 + centerCurve), y });
-        objects.push({ type: 'tree', x: Math.min(0.9, 0.85 + centerCurve), y });
+        objects.push({ type: 'tree', x: Math.max(0.1, 0.12 + centerCurve), y });
+        objects.push({ type: 'tree', x: Math.min(0.9, 0.88 + centerCurve), y });
       } else {
         // Right side with narrow gap - flowing
-        const leftBase = 0.25 + curve;
-        const rightBase = 0.75 + curve;
+        const leftBase = 0.22 + curve;
+        const rightBase = 0.78 + curve;
         objects.push({ type: 'tree', x: Math.max(0.1, leftBase), y });
         objects.push({ type: 'tree', x: Math.min(0.9, rightBase), y });
       }
@@ -332,16 +332,16 @@ export class CourseGenerator {
   private createVeryDense(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 60;
-    const baseSpacing = 75;
+    const baseSpacing = 105;
     
     while (y < endY) {
-      const spacing = baseSpacing + (Math.random() * 15 - 7);
+      const spacing = baseSpacing + (Math.random() * 20 - 10);
       const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 6) * 0.25; // Stronger curve
+      const curve = Math.sin(progress * Math.PI * 6) * 0.2; // Stronger curve
       
       // Multiple trees with flow
-      const numTrees = 3 + Math.floor(Math.random() * 2); // 3-4 trees
-      const basePositions = [0.15, 0.3, 0.45, 0.55, 0.7, 0.85];
+      const numTrees = 2 + Math.floor(Math.random() * 2); // 2-3 trees
+      const basePositions = [0.15, 0.3, 0.5, 0.7, 0.85];
       
       const selected: number[] = [];
       while (selected.length < numTrees) {
@@ -365,30 +365,28 @@ export class CourseGenerator {
   private createAlternatingWalls(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 70;
-    const baseSpacing = 85;
+    const baseSpacing = 120;
     let wallSide = 0; // 0 = left, 1 = right
     
     while (y < endY) {
-      const spacing = baseSpacing + (Math.random() * 20 - 10);
+      const spacing = baseSpacing + (Math.random() * 28 - 14);
       const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 8) * 0.3; // Strong flowing curve
+      const curve = Math.sin(progress * Math.PI * 8) * 0.24; // Strong flowing curve
       
       if (wallSide === 0) {
         // Left wall - flowing curve forces player right
-        const baseX = 0.15 + curve;
+        const baseX = 0.18 + curve;
         objects.push({ type: 'tree', x: Math.max(0.05, baseX), y });
-        objects.push({ type: 'tree', x: Math.max(0.05, baseX + 0.1), y });
-        objects.push({ type: 'tree', x: Math.max(0.05, baseX + 0.2), y });
+        objects.push({ type: 'tree', x: Math.max(0.05, baseX + 0.12), y });
       } else {
         // Right wall - flowing curve forces player left
-        const baseX = 0.65 + curve;
+        const baseX = 0.64 + curve;
         objects.push({ type: 'tree', x: Math.min(0.95, baseX), y });
-        objects.push({ type: 'tree', x: Math.min(0.95, baseX + 0.1), y });
-        objects.push({ type: 'tree', x: Math.min(0.95, baseX + 0.2), y });
+        objects.push({ type: 'tree', x: Math.min(0.95, baseX + 0.12), y });
       }
       
       // Smooth transition between walls
-      if (Math.random() < 0.25) {
+      if (Math.random() < 0.22) {
         wallSide = 1 - wallSide;
       }
       
@@ -404,30 +402,28 @@ export class CourseGenerator {
   private createTightZigzag(startY: number, endY: number): CourseObject[] {
     const objects: CourseObject[] = [];
     let y = startY + 50;
-    const baseSpacing = 65;
+    const baseSpacing = 95;
     let side = 0;
     
     while (y < endY) {
-      const spacing = baseSpacing + (Math.random() * 10 - 5);
+      const spacing = baseSpacing + (Math.random() * 14 - 7);
       const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 10) * 0.35; // Very tight, flowing turns
+      const curve = Math.sin(progress * Math.PI * 10) * 0.28; // Very tight, flowing turns
       
       if (side === 0) {
         // Left side - tight flowing curve
         const baseX = 0.2 + curve;
         objects.push({ type: 'tree', x: Math.max(0.05, baseX), y });
-        objects.push({ type: 'tree', x: Math.max(0.05, baseX + 0.1), y });
-        objects.push({ type: 'tree', x: Math.max(0.05, baseX + 0.2), y });
+        objects.push({ type: 'tree', x: Math.max(0.05, baseX + 0.12), y });
       } else {
         // Right side - tight flowing curve
-        const baseX = 0.6 + curve;
+        const baseX = 0.62 + curve;
         objects.push({ type: 'tree', x: Math.min(0.95, baseX), y });
-        objects.push({ type: 'tree', x: Math.min(0.95, baseX + 0.1), y });
-        objects.push({ type: 'tree', x: Math.min(0.95, baseX + 0.2), y });
+        objects.push({ type: 'tree', x: Math.min(0.95, baseX + 0.12), y });
       }
       
       // Quick transitions for tight turns
-      if (Math.random() < 0.4) {
+      if (Math.random() < 0.32) {
         side = 1 - side;
       }
       
