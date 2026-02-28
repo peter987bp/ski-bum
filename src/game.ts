@@ -5,6 +5,7 @@ import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
 import { BASE_SCROLL_SPEED } from './constants';
 const SPAWN_GAP = 220; // world units behind the player at spawn
+const MAX_SPEED_INCREASE_FACTOR = 0.35;
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -14,8 +15,10 @@ export class Game {
   private gameState: GameState;
   private animationFrameId: number | null = null;
   private worldOffset: number = 0; // How far we've scrolled
-  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed
+  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (ramped)
   private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (can be boosted)
+  private readonly startingScrollSpeed: number = BASE_SCROLL_SPEED;
+  private readonly maxScrollSpeedIncrease: number = BASE_SCROLL_SPEED * MAX_SPEED_INCREASE_FACTOR;
   private isSpeedBoosted: boolean = false; // Track if speed is boosted
   private trees: Tree[] = []; // Array of trees
   private courseGenerator: CourseGenerator; // Course generator
@@ -28,6 +31,15 @@ export class Game {
   private menuCloseButton: HTMLButtonElement | null = null; // Menu close button DOM element
   private lastFrameTime: number | null = null; // For normalized dt updates
   private debugHudEnabled: boolean = false;
+  private treeDensityMultiplier: number = 1.0;
+  private treeDensitySlider: HTMLInputElement | null = null;
+  private treeDensityValue: HTMLSpanElement | null = null;
+  private debugPanel: HTMLDivElement | null = null;
+  private debugPanelBody: HTMLDivElement | null = null;
+  private debugPanelToggle: HTMLInputElement | null = null;
+  private densityDebounceId: number | null = null;
+  private pendingDensityMultiplier: number | null = null;
+  private regenAnimationFrameId: number | null = null;
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -90,11 +102,13 @@ export class Game {
       document.addEventListener('DOMContentLoaded', () => {
         this.setupMenuButtons();
         this.setupRetryButton();
+        this.setupDebugPanel();
       });
     } else {
       // DOM is already ready
       this.setupMenuButtons();
       this.setupRetryButton();
+      this.setupDebugPanel();
     }
   }
 
@@ -216,6 +230,75 @@ export class Game {
     } else {
       console.error('Retry button not found!');
     }
+  }
+
+  private setupDebugPanel(): void {
+    this.debugPanel = document.getElementById('debugPanel') as HTMLDivElement;
+    this.debugPanelBody = document.getElementById('debugPanelBody') as HTMLDivElement;
+    this.debugPanelToggle = document.getElementById('debugPanelToggle') as HTMLInputElement;
+    this.treeDensitySlider = document.getElementById('treeDensitySlider') as HTMLInputElement;
+    this.treeDensityValue = document.getElementById('treeDensityValue') as HTMLSpanElement;
+
+    if (!this.debugPanel) {
+      console.warn('Debug panel not found!');
+      return;
+    }
+
+    const isDevHost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+
+    if (this.debugPanelToggle) {
+      this.debugPanelToggle.checked = isDevHost;
+      this.setDebugPanelCollapsed(!this.debugPanelToggle.checked);
+      this.debugPanelToggle.addEventListener('change', () => {
+        this.setDebugPanelCollapsed(!this.debugPanelToggle!.checked);
+      });
+    }
+
+    if (this.treeDensitySlider) {
+      this.treeDensitySlider.value = this.treeDensityMultiplier.toFixed(2);
+      this.updateTreeDensityReadout(this.treeDensityMultiplier);
+      this.treeDensitySlider.addEventListener('input', () => {
+        const rawValue = Number.parseFloat(this.treeDensitySlider!.value);
+        const density = Number.isFinite(rawValue) ? rawValue : 1.0;
+        this.treeDensityMultiplier = density;
+        this.updateTreeDensityReadout(density);
+        this.scheduleCourseRegeneration(density);
+      });
+    }
+  }
+
+  private setDebugPanelCollapsed(collapsed: boolean): void {
+    if (!this.debugPanelBody) return;
+    this.debugPanelBody.style.display = collapsed ? 'none' : 'flex';
+  }
+
+  private updateTreeDensityReadout(value: number): void {
+    if (!this.treeDensityValue) return;
+    this.treeDensityValue.textContent = `${value.toFixed(2)}x`;
+  }
+
+  private scheduleCourseRegeneration(multiplier: number): void {
+    this.pendingDensityMultiplier = multiplier;
+    if (this.densityDebounceId !== null) {
+      window.clearTimeout(this.densityDebounceId);
+    }
+
+    this.densityDebounceId = window.setTimeout(() => {
+      this.densityDebounceId = null;
+      const density = this.pendingDensityMultiplier ?? this.treeDensityMultiplier;
+      this.pendingDensityMultiplier = null;
+
+      if (this.regenAnimationFrameId !== null) {
+        cancelAnimationFrame(this.regenAnimationFrameId);
+      }
+
+      this.regenAnimationFrameId = requestAnimationFrame(() => {
+        this.regenAnimationFrameId = null;
+        this.regenerateAheadCourse(density);
+      });
+    }, 75);
   }
 
   private setupMouseListeners(): void {
@@ -374,6 +457,7 @@ export class Game {
 
     // Reset world
     this.worldOffset = 0;
+    this.baseScrollSpeed = this.startingScrollSpeed;
     this.currentScrollSpeed = this.baseScrollSpeed;
     this.isSpeedBoosted = false;
 
@@ -428,25 +512,51 @@ export class Game {
 
   private loadCourse(): void {
     // Create the course
-    this.currentCourse = this.courseGenerator.createSimpleCourse();
+    this.currentCourse = this.courseGenerator.createSimpleCourse(this.treeDensityMultiplier);
     
     // Get all objects from the course
     this.courseObjects = this.courseGenerator.getAllObjects(this.currentCourse);
     
     // Convert course objects to trees
-    this.courseObjects.forEach(obj => {
+    this.trees = this.buildTreesFromObjects(this.courseObjects);
+    
+    // Update target distance to match course length
+    this.gameState.targetDistance = this.currentCourse.totalLength;
+  }
+
+  private buildTreesFromObjects(objects: CourseObject[]): Tree[] {
+    const trees: Tree[] = [];
+
+    objects.forEach(obj => {
       if (obj.type === 'tree') {
         const sizeVariation = 0.8 + Math.random() * 0.4;
         const width = obj.width || (40 * sizeVariation);
         const height = obj.height || (60 * sizeVariation);
         const tree = new Tree(obj.x, obj.y, width, height);
-        this.trees.push(tree);
+        trees.push(tree);
       }
       // Add more object types here as needed
     });
-    
-    // Update target distance to match course length
-    this.gameState.targetDistance = this.currentCourse.totalLength;
+
+    return trees;
+  }
+
+  private regenerateAheadCourse(multiplier: number): void {
+    if (!this.useCourseSystem || !this.currentCourse) return;
+
+    const cutoffWorldY = Math.max(0, this.worldOffset - 200);
+    const keptObjects = this.courseObjects.filter(obj => obj.y <= cutoffWorldY);
+    const keptTrees = this.trees.filter(tree => tree.position.y <= cutoffWorldY);
+
+    const newCourse = this.courseGenerator.createSimpleCourse(multiplier);
+    const newCourseObjects = this.courseGenerator.getAllObjects(newCourse);
+    const aheadObjects = newCourseObjects.filter(obj => obj.y > cutoffWorldY);
+    const aheadTrees = this.buildTreesFromObjects(aheadObjects);
+
+    this.courseObjects = [...keptObjects, ...aheadObjects];
+    this.trees = [...keptTrees, ...aheadTrees];
+    this.currentCourse = newCourse;
+    this.gameState.targetDistance = newCourse.totalLength;
   }
 
 
@@ -538,6 +648,9 @@ export class Game {
       return;
     }
 
+    const distanceProgress = this.getDistanceProgress();
+    this.updateScrollSpeedRamp(distanceProgress);
+
     // World scrolls automatically (unless stopped)
     if (this.currentScrollSpeed > 0) {
       this.worldOffset += this.currentScrollSpeed * dt;
@@ -555,7 +668,8 @@ export class Game {
       this.skier.position.x,
       this.worldOffset,
       this.currentScrollSpeed,
-      dt
+      dt,
+      distanceProgress
     );
     if (snowmanCaught) {
       this.gameState.crashed = true;
@@ -583,6 +697,25 @@ export class Game {
     // Keep skier within horizontal bounds only
     if (this.skier.position.x < 0) this.skier.position.x = 0;
     if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
+  }
+
+  private updateScrollSpeedRamp(distanceProgress: number): void {
+    const previousBaseSpeed = this.baseScrollSpeed;
+
+    this.baseScrollSpeed = this.startingScrollSpeed +
+      (distanceProgress * this.maxScrollSpeedIncrease);
+
+    if (this.currentScrollSpeed > 0) {
+      const speedMultiplier = previousBaseSpeed > 0
+        ? this.currentScrollSpeed / previousBaseSpeed
+        : 1;
+      this.currentScrollSpeed = this.baseScrollSpeed * speedMultiplier;
+    }
+  }
+
+  private getDistanceProgress(): number {
+    if (this.gameState.targetDistance <= 0) return 0;
+    return Math.min(1, Math.max(0, this.gameState.distanceTraveled / this.gameState.targetDistance));
   }
 
   private checkCollisions(): void {
@@ -784,7 +917,3 @@ export class Game {
   }
 
 }
-
-
-
-
