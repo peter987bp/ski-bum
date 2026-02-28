@@ -12,6 +12,23 @@
             <canvas id="gameCanvas"></canvas>
             <!-- Menu button -->
             <button id="menuButton" class="menu-button">☰</button>
+            <!-- Debug panel -->
+            <div id="debugPanel" class="debug-panel">
+                <div class="debug-panel-header">
+                    <span class="debug-panel-title">Debug</span>
+                    <label class="debug-panel-toggle">
+                        <input id="debugPanelToggle" type="checkbox">
+                        <span>Debug Panel</span>
+                    </label>
+                </div>
+                <div id="debugPanelBody" class="debug-panel-body">
+                    <div class="debug-row">
+                        <label for="treeDensitySlider">Tree Density</label>
+                        <input id="treeDensitySlider" type="range" min="0.3" max="2.0" step="0.05" value="1.0">
+                        <span id="treeDensityValue" class="debug-value">1.00x</span>
+                    </div>
+                </div>
+            </div>
             <!-- Retry button -->
             <button id="retryButton" class="retry-button" style="display: none;">Retry</button>
             <!-- Menu overlay -->
@@ -53,4 +70,3 @@
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
-
