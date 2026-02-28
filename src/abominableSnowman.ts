@@ -1,19 +1,22 @@
 import { Position } from './types';
 import { BASE_SCROLL_SPEED } from './constants';
 
-// World-space chase tuning (values assume ~60 FPS; dt is normalized to 60fps)
+const LEGACY_FPS = 60;
+
+// World-space chase tuning (values are per second unless noted)
 const CLOSE_RANGE_DISTANCE = 160; // distance behind where catchup ramps in
-const MIN_CATCHUP = 0.6;
-const MAX_CATCHUP = 4.0;
+const MIN_CATCHUP = 0.6 * LEGACY_FPS;
+const MAX_CATCHUP = 4.0 * LEGACY_FPS;
 const CATCH_THRESHOLD = 18; // world units; when within this, the player is caught
+const DEFAULT_X_SPEED = 1.15 * LEGACY_FPS; // pixels per second
 
 export class AbominableSnowman {
   position: Position; // screen-space position (x/y)
   worldY: number; // world-space position along the course
   size: number;
-  xSpeed: number; // pixels per frame for horizontal chase
+  xSpeed: number; // pixels per second for horizontal chase
 
-  constructor(x: number, initialWorldY: number, size: number = 25, xSpeed: number = 1.15) {
+  constructor(x: number, initialWorldY: number, size: number = 25, xSpeed: number = DEFAULT_X_SPEED) {
     this.position = { x, y: 0 };
     this.worldY = initialWorldY;
     this.size = size;
@@ -24,11 +27,11 @@ export class AbominableSnowman {
     this.worldY = playerWorldY - spawnGap;
   }
 
-  update(targetX: number, playerWorldY: number, playerScrollSpeed: number, dt: number): boolean {
+  update(targetX: number, playerWorldY: number, playerScrollSpeed: number, dtSec: number): boolean {
     // Horizontal chase stays in screen space
     const dx = targetX - this.position.x;
     if (Math.abs(dx) > 0.001) {
-      const stepX = Math.min(this.xSpeed * dt, Math.abs(dx));
+      const stepX = Math.min(this.xSpeed * dtSec, Math.abs(dx));
       this.position.x += Math.sign(dx) * stepX;
     }
 
@@ -43,7 +46,7 @@ export class AbominableSnowman {
     const catchup = lerp(MIN_CATCHUP, MAX_CATCHUP, clamp01(0.65 * gapFactor + 0.35 * slowFactor));
     const chaseSpeed = Math.max(0, safeScrollSpeed + catchup * (1 - 0.35 * fastFactor));
 
-    this.worldY += chaseSpeed * dt;
+    this.worldY += chaseSpeed * dtSec;
 
     const newGap = playerWorldY - this.worldY;
     return newGap <= CATCH_THRESHOLD;
