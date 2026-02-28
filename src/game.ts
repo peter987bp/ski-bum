@@ -60,6 +60,11 @@ export class Game {
   private windParticles: WindParticle[] = [];
   private lastWindForce: number = 0;
   private debugHudEnabled: boolean = false;
+  private shakeTimeLeftMs = 0;
+  private shakeDurationMs = 0;
+  private shakeMagnitudePx = 0;
+  private shakeX = 0;
+  private shakeY = 0;
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -412,6 +417,11 @@ export class Game {
     this.worldOffset = 0;
     this.currentScrollSpeed = this.baseScrollSpeed;
     this.isSpeedBoosted = false;
+    this.shakeTimeLeftMs = 0;
+    this.shakeDurationMs = 0;
+    this.shakeMagnitudePx = 0;
+    this.shakeX = 0;
+    this.shakeY = 0;
 
     // Reset skier position
     this.skier = new Skier(
@@ -631,13 +641,41 @@ export class Game {
     this.lastFrameTime = timestamp;
     this.lastDtSec = dtSec;
 
-    this.update(dtSec);
+    const dt = dtSec * LEGACY_FPS;
+    this.update(dt);
     this.render();
 
     this.animationFrameId = requestAnimationFrame((t) => this.gameLoop(t));
   }
 
-  private update(dtSec: number): void {
+  private triggerShake(durationMs: number, magnitudePx: number): void {
+    this.shakeTimeLeftMs = Math.max(this.shakeTimeLeftMs, durationMs);
+    this.shakeDurationMs = Math.max(this.shakeDurationMs, durationMs);
+    this.shakeMagnitudePx = Math.max(this.shakeMagnitudePx, magnitudePx);
+  }
+
+  private updateShake(dt: number): void {
+    if (this.shakeTimeLeftMs <= 0) {
+      this.shakeX = 0;
+      this.shakeY = 0;
+      this.shakeDurationMs = 0;
+      this.shakeMagnitudePx = 0;
+      return;
+    }
+
+    const stepMs = dt * (1000 / 60);
+    this.shakeTimeLeftMs = Math.max(0, this.shakeTimeLeftMs - stepMs);
+
+    const t = this.shakeDurationMs > 0 ? (this.shakeTimeLeftMs / this.shakeDurationMs) : 0;
+    const strength = this.shakeMagnitudePx * (t * t);
+
+    const rand = () => (Math.random() * 2 - 1);
+    this.shakeX = rand() * strength;
+    this.shakeY = rand() * strength;
+  }
+
+  private update(dt: number): void {
+    this.updateShake(dt);
     // Don't update game logic when complete or crashed, but still allow UI interactions
     if (this.gameState.runComplete || this.gameState.crashed) {
       // Stop scrolling when complete or crashed
@@ -645,6 +683,7 @@ export class Game {
       return;
     }
 
+    const dtSec = dt / LEGACY_FPS;
     const scaledDtSec = dtSec * this.speedMultiplier;
 
     // World scrolls automatically (unless stopped)
@@ -734,14 +773,20 @@ export class Game {
       // Check if skier rectangle intersects with tree rectangle
       if (skierLeft < treeRight && skierRight > treeLeft &&
           skierTop < treeBottom && skierBottom > treeTop) {
-        this.gameState.crashed = true;
-        this.currentScrollSpeed = 0;
+        if (!this.gameState.crashed) {
+          this.gameState.crashed = true;
+          this.currentScrollSpeed = 0;
+          this.triggerShake(300, 12);
+        }
         return;
       }
     }
   }
 
   private render(): void {
+    this.ctx.save();
+    this.ctx.translate(this.shakeX, this.shakeY);
+
     // Clear canvas
     this.ctx.fillStyle = '#FFFFFF'; // White background
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -772,6 +817,8 @@ export class Game {
 
     // Draw UI (not affected by camera)
     this.drawUI();
+
+    this.ctx.restore();
   }
 
   private drawScrollingBackground(): void {
@@ -915,6 +962,3 @@ export class Game {
   }
 
 }
-
-
-
