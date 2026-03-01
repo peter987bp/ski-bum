@@ -1,0 +1,21 @@
+{
+    "name": "ski-bum-mcp",
+    "private": true,
+    "type": "module",
+    "version": "0.0.1",
+    "description": "Local-only MCP server for Ski Bum: deterministic run_simulation tool",
+    "engines": { "node": ">=18" },
+    "scripts": {
+      "dev": "tsx src/index.ts",
+      "build": "tsc -p tsconfig.json",
+      "start": "node dist/index.js"
+    },
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "^1.0.0",
+      "zod": "^3.23.8"
+    },
+    "devDependencies": {
+      "tsx": "^4.19.2",
+      "typescript": "^5.5.4"
+    }
+  }
