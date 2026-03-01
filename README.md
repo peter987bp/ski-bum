@@ -61,10 +61,44 @@ SKI_BUM/
 ├── public/
 │   ├── tree.png             # Optional tree sprite
 │   └── skier-1938543.jpg    # Optional skier sprite
+├── mcp/
+│   ├── src/
+│   │   ├── index.ts         # Local stdio MCP server entrypoint
+│   │   └── sim/runSimulation.ts # Deterministic headless run simulation
+│   ├── probe-tools.ts       # Small client for validating exposed tools
+│   ├── package.json
+│   └── tsconfig.json
 ├── dist/                    # Production build output
 ├── package.json
 ├── tsconfig.json
 └── vite.config.ts
+```
+
+## Local MCP Server
+
+This branch adds a local-only Model Context Protocol (MCP) server under `mcp/` so an MCP client can run deterministic Ski Bum simulations without opening the browser.
+
+- **Transport**: stdio (`StdioServerTransport`), intended for local CLI/editor integration.
+- **Server name**: `ski-bum-local`
+- **Current tool**: `run_simulation`
+  - Inputs: `seed` (`0` to `2147483647`) and `seconds` (`1` to `300`)
+  - Output: JSON metrics including total distance, crash count, final scroll speed, and snowman distance
+- **Simulation behavior**: headless, deterministic, fixed-timestep, and currently uses placeholder game-like logic that can later be replaced with shared game-core code.
+
+To run the MCP server locally:
+
+```bash
+cd mcp
+npm install
+npm run build
+npm run dev
+```
+
+To verify the built server exposes its tools:
+
+```bash
+cd mcp
+npx tsx probe-tools.ts
 ```
 
 ## Configuration & Tuning
@@ -99,6 +133,15 @@ If a sprite fails to load, the game falls back to simple procedural shapes.
 npm run dev      # Start dev server
 npm run build    # Type-check and build for production
 npm run preview  # Preview production build
+```
+
+MCP server scripts live in `mcp/package.json`:
+
+```bash
+cd mcp
+npm run dev      # Run the local MCP server with tsx
+npm run build    # Compile the MCP server to dist/
+npm run start    # Run the compiled MCP server
 ```
 
 ## Notes & Debugging
