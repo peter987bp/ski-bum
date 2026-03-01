@@ -74,32 +74,101 @@ SKI_BUM/
 └── vite.config.ts
 ```
 
-## Local MCP Server
+## Local MCP Simulation Server
 
-This branch adds a local-only Model Context Protocol (MCP) server under `mcp/` so an MCP client can run deterministic Ski Bum simulations without opening the browser.
+This branch adds a local-only Model Context Protocol (MCP) server under mcp/ that allows deterministic, headless Ski Bum simulations to run without launching the browser. The purpose of this server is to enable reproducible gameplay tuning, deterministic difficulty testing, and headless simulation runs from a CLI or editor-integrated MCP client.
 
-- **Transport**: stdio (`StdioServerTransport`), intended for local CLI/editor integration.
-- **Server name**: `ski-bum-local`
-- **Current tool**: `run_simulation`
-  - Inputs: `seed` (`0` to `2147483647`) and `seconds` (`1` to `300`)
-  - Output: JSON metrics including total distance, crash count, final scroll speed, and snowman distance
-- **Simulation behavior**: headless, deterministic, fixed-timestep, and currently uses placeholder game-like logic that can later be replaced with shared game-core code.
+**Architecture**
 
-To run the MCP server locally:
+Transport: stdio (StdioServerTransport)
+Scope: local machine only (no network, no SaaS, no OAuth)
+Server name: ski-bum-local
+Tool exposed: run_simulation
 
+Tool: run_simulation
+
+Inputs:
+seed — integer between 0 and 2147483647
+seconds — integer between 1 and 300
+
+Output:
+```JSON
+{
+  "seed": 42,
+  "seconds": 40,
+  "totalDistance": 13356,
+  "crashCount": 3,
+  "finalScrollSpeed": 463.82,
+  "snowmanDistance": 181.58
+}
+```
+
+**Simulation Properties**
+The simulation runs headlessly with:
+A fixed timestep (1/60)
+A seeded pseudo-random number generator
+No DOM or Canvas dependencies
+Deterministic behavior for identical inputs
+The current implementation uses placeholder game-like logic and is designed to be replaced with shared game-core logic in a future refactor.
+
+**Running the MCP Server**
+From the repository root:
 ```bash
 cd mcp
 npm install
 npm run build
-npm run dev
+npm run start
 ```
+This starts the server in stdio mode for use by an MCP client such as Codex CLI or Codex Desktop.
 
-To verify the built server exposes its tools:
-
+**Verifying Tool Exposure**
+To confirm the server exposes its tools:
 ```bash
 cd mcp
 npx tsx probe-tools.ts
 ```
+Expected output:
+TOOLS: [ 'run_simulation' ]
+
+**Direct CLI Invocation**
+
+A minimal caller script allows invoking the MCP tool without an editor integration.
+```bash
+cd mcp
+node call-run-simulation.mjs 42 40
+```
+This returns raw JSON output:
+```JSON
+{"seed":42,"seconds":40,"totalDistance":13356,"crashCount":3,"finalScrollSpeed":463.82,"snowmanDistance":181.58}
+```
+This can be used for deterministic testing, regression checks, tuning passes, or future CI integration.
+
+**Determinism**
+
+Running:
+```bash
+node call-run-simulation.mjs 42 40
+```
+multiple times will produce identical output.
+Changing either seed or seconds will deterministically change the results.
+
+**Security Model**
+
+This MCP server is designed with minimal surface area:
+No filesystem write access
+No environment variable exposure
+No network transport
+Single tool exposed
+Input validation enforced with Zod
+Future Direction
+
+**Planned improvements**
+
+Extracting shared src/core/ game logic
+Replacing placeholder simulation logic with real gameplay state stepping
+Adding batch simulation tools for crash-rate and difficulty analysis
+Creating regression tooling for tuning validation
+This simulation layer provides the foundation for reproducible gameplay tuning independent of the rendering loop.
 
 ## Configuration & Tuning
 
