@@ -58,7 +58,7 @@ export class Game {
   private windSystem: WindSystem;
   private skierInputVelocity = { vx: 0, vy: 0 };
   private windParticles: WindParticle[] = [];
-  private lastWindForce: number = 0;
+  private currentWindForce: number = 0;
   private debugHudEnabled: boolean = false;
   private shakeTimeLeftMs = 0;
   private shakeDurationMs = 0;
@@ -101,7 +101,7 @@ export class Game {
     );
     this.skierInputVelocity = { vx: this.skier.velocity.vx, vy: this.skier.velocity.vy };
     this.windSystem = new WindSystem();
-    this.lastWindForce = 0;
+    this.currentWindForce = 0;
     this.initWindParticles();
 
     // Abominable snowman starts behind the skier in world space
@@ -430,7 +430,7 @@ export class Game {
     );
     this.skierInputVelocity = { vx: this.skier.velocity.vx, vy: this.skier.velocity.vy };
     this.windSystem = new WindSystem();
-    this.lastWindForce = 0;
+    this.currentWindForce = 0;
     this.initWindParticles();
 
     // Reset abominable snowman
@@ -512,7 +512,7 @@ export class Game {
           this.syncSkierInputVelocity();
           break;
         case 'ArrowDown':
-          this.handleSpeedBoost();
+          this.handleDownPressSpeedChange();
           break;
         case 'ArrowUp':
           // Stop scrolling
@@ -526,7 +526,7 @@ export class Game {
     });
   }
 
-  private handleSpeedBoost(): void {
+  private handleDownPressSpeedChange(): void {
     const now = Date.now();
     const lastPressTime = (this as any).lastDownPressTime || 0;
     const consecutivePressWindow = 300; // milliseconds
@@ -641,8 +641,8 @@ export class Game {
     this.lastFrameTime = timestamp;
     this.lastDtSec = dtSec;
 
-    const dt = dtSec * LEGACY_FPS;
-    this.update(dt);
+    const dtFrames = dtSec * LEGACY_FPS;
+    this.update(dtFrames);
     this.render();
 
     this.animationFrameId = requestAnimationFrame((t) => this.gameLoop(t));
@@ -654,7 +654,7 @@ export class Game {
     this.shakeMagnitudePx = Math.max(this.shakeMagnitudePx, magnitudePx);
   }
 
-  private updateShake(dt: number): void {
+  private updateShake(dtFrames: number): void {
     if (this.shakeTimeLeftMs <= 0) {
       this.shakeX = 0;
       this.shakeY = 0;
@@ -663,7 +663,7 @@ export class Game {
       return;
     }
 
-    const stepMs = dt * (1000 / 60);
+    const stepMs = dtFrames * (1000 / 60);
     this.shakeTimeLeftMs = Math.max(0, this.shakeTimeLeftMs - stepMs);
 
     const t = this.shakeDurationMs > 0 ? (this.shakeTimeLeftMs / this.shakeDurationMs) : 0;
@@ -674,8 +674,8 @@ export class Game {
     this.shakeY = rand() * strength;
   }
 
-  private update(dt: number): void {
-    this.updateShake(dt);
+  private update(dtFrames: number): void {
+    this.updateShake(dtFrames);
     // Don't update game logic when complete or crashed, but still allow UI interactions
     if (this.gameState.runComplete || this.gameState.crashed) {
       // Stop scrolling when complete or crashed
@@ -683,7 +683,7 @@ export class Game {
       return;
     }
 
-    const dtSec = dt / LEGACY_FPS;
+    const dtSec = dtFrames / LEGACY_FPS;
     const scaledDtSec = dtSec * this.speedMultiplier;
 
     // World scrolls automatically (unless stopped)
@@ -698,7 +698,7 @@ export class Game {
       this.windSystem.update(scaledDtSec, this.gameState.distanceTraveled);
       windForce = this.windSystem.getForce();
     }
-    this.lastWindForce = windActive ? windForce : 0;
+    this.currentWindForce = windActive ? windForce : 0;
 
     const windVelocity = windForce;
     this.skier.velocity.vx = this.skierInputVelocity.vx + windVelocity;
@@ -929,7 +929,7 @@ export class Game {
       `Speed multiplier: ${this.speedMultiplier.toFixed(2)}`,
       `Boosted: ${this.isSpeedBoosted ? 'true' : 'false'}`,
       `dt: ${this.lastDtSec.toFixed(4)}s`,
-      `Wind force: ${this.lastWindForce.toFixed(2)}`
+      `Wind force: ${this.currentWindForce.toFixed(2)}`
     ];
 
     const padding = 10;
