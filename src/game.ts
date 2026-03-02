@@ -714,6 +714,10 @@ export class Game {
     this.skier.update(scaledDtSec);
     this.skier.position.y = fixedY; // Lock Y position
 
+    // Clamp before downstream collision checks so wind cannot create off-screen collisions.
+    if (this.skier.position.x < 0) this.skier.position.x = 0;
+    if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
+
     // Update abominable snowman (chase skier)
     const snowmanCaught = this.abominableSnowman.update(
       this.skier.position.x,
@@ -746,10 +750,6 @@ export class Game {
       this.gameState.runComplete = true;
       this.gameState.distanceTraveled = this.gameState.targetDistance; // Cap at target
     }
-
-    // Keep skier within horizontal bounds only
-    if (this.skier.position.x < 0) this.skier.position.x = 0;
-    if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
   }
 
   private checkCollisions(): void {
