@@ -722,8 +722,11 @@ export class Game {
       scaledDtSec
     );
     if (snowmanCaught) {
-      this.gameState.crashed = true;
-      this.currentScrollSpeed = 0;
+      if (!this.gameState.crashed) {
+        this.gameState.crashed = true;
+        this.currentScrollSpeed = 0;
+        this.triggerShake(300, 12);
+      }
       return;
     }
 
@@ -784,12 +787,12 @@ export class Game {
   }
 
   private render(): void {
-    this.ctx.save();
-    this.ctx.translate(this.shakeX, this.shakeY);
-
     // Clear canvas
     this.ctx.fillStyle = '#FFFFFF'; // White background
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    this.ctx.save();
+    this.ctx.translate(this.shakeX, this.shakeY);
 
     // Save context and apply camera scroll
     this.ctx.save();
