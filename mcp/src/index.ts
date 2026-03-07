@@ -25,6 +25,7 @@ server.tool(
             text: JSON.stringify(result),
           },
         ],
+        structuredContent: result,
       };
     }
   );
