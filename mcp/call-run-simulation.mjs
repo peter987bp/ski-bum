@@ -7,7 +7,7 @@ const seconds = Number(process.argv[3] ?? "40");
 const client = new Client({ name: "caller", version: "0.0.1" }, { capabilities: {} });
 const transport = new StdioClientTransport({
   command: "node",
-  args: ["./dist/index.js"],
+  args: ["./dist/mcp/src/index.js"],
   cwd: new URL(".", import.meta.url).pathname, // mcp/ folder
 });
 

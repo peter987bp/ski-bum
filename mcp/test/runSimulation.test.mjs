@@ -1,90 +1,66 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { initSimulation, runSimulation, stepSimulation } from "../dist/sim/runSimulation.js";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createInitialGameState, stepGame } from '../dist/src/core/stepGame.js';
+import {
+  initSimulation,
+  runSimulation,
+  simulationCommandsForStep,
+  stepSimulation
+} from '../dist/mcp/src/sim/runSimulation.js';
 
-const knownCases = [
-  {
-    seed: 1,
-    seconds: 10,
-    expected: {
-      seed: 1,
-      seconds: 10,
-      totalDistance: 2601,
-      crashCount: 0,
-      finalScrollSpeed: 300,
-      snowmanDistance: 245.47,
-    },
-  },
-  {
-    seed: 42,
-    seconds: 40,
-    expected: {
-      seed: 42,
-      seconds: 40,
-      totalDistance: 12975,
-      crashCount: 4,
-      finalScrollSpeed: 435.42,
-      snowmanDistance: 176.24,
-    },
-  },
-  {
-    seed: 123456,
-    seconds: 60,
-    expected: {
-      seed: 123456,
-      seconds: 60,
-      totalDistance: 19685,
-      crashCount: 11,
-      finalScrollSpeed: 393.12,
-      snowmanDistance: 103.5,
-    },
-  },
-];
+test('shared core step has deterministic known progression', () => {
+  let state = createInitialGameState({
+    canvasWidth: 800,
+    canvasHeight: 600,
+    targetDistance: 5000,
+    trees: [],
+    startingScrollSpeed: 1.45,
+    maxScrollSpeedIncrease: 1.45 * 0.35
+  });
 
-test("runSimulation is deterministic for identical inputs", () => {
-  for (const { seed, seconds } of knownCases) {
-    const first = runSimulation({ seed, seconds });
-    const second = runSimulation({ seed, seconds });
-    assert.deepEqual(second, first);
-  }
+  state = stepGame(state, { commands: [{ direction: 'down', atMs: 0 }] }, 1);
+  assert.equal(state.distanceTraveled, 1.45);
+  assert.equal(state.currentScrollSpeed, 1.45);
+  assert.equal(state.skier.vx, 0);
+  assert.equal(state.skier.vy, 1.7);
+
+  state = stepGame(state, { commands: [{ direction: 'left', atMs: 50 }] }, 1);
+  assert.equal(Math.round(state.skier.x * 100) / 100, 397.45);
+  assert.equal(state.skier.vx, -2.55);
+  assert.equal(Math.round(state.distanceTraveled * 1000) / 1000, 2.9);
 });
 
-test("runSimulation produces stable known outputs", () => {
-  for (const { seed, seconds, expected } of knownCases) {
-    const actual = runSimulation({ seed, seconds });
-    assert.equal(actual.seed, expected.seed);
-    assert.equal(actual.seconds, expected.seconds);
-    assert.equal(actual.totalDistance, expected.totalDistance);
-    assert.equal(actual.crashCount, expected.crashCount);
-    assert.equal(actual.finalScrollSpeed, expected.finalScrollSpeed);
-    assert.equal(actual.snowmanDistance, expected.snowmanDistance);
-  }
+test('runSimulation is deterministic for identical inputs', () => {
+  const first = runSimulation({ seed: 42, seconds: 40 });
+  const second = runSimulation({ seed: 42, seconds: 40 });
+  assert.deepEqual(second, first);
 });
 
-test("stepSimulation terminates immediately when crash penalty causes catch", () => {
-  const state = initSimulation(7, 10);
-  state.snowmanDistance = 5;
+test('simulation wrapper matches direct shared step loop', () => {
+  const seconds = 20;
+  const totalSteps = seconds * 60;
 
-  // First random call forces crash branch.
-  const terminate = stepSimulation(state, 1 / 60, () => 0);
+  let fromWrapper = initSimulation(123);
+  let fromDirect = initSimulation(123);
 
-  assert.equal(terminate, true);
-  assert.equal(state.snowmanDistance <= 0, true);
-  assert.equal(state.snowmanDistance >= -50, true);
-  assert.equal(state.crashCount, 1);
+  for (let step = 0; step < totalSteps; step++) {
+    fromWrapper = stepSimulation(fromWrapper, step);
+    fromDirect = stepGame(fromDirect, { commands: simulationCommandsForStep(step) }, 1);
+
+    if (fromWrapper.crashed || fromWrapper.runComplete) {
+      break;
+    }
+  }
+
+  assert.deepEqual(fromWrapper, fromDirect);
 });
 
-test("boundary seed/seconds cases are deterministic", () => {
-  const boundaryCases = [
-    { seed: 0, seconds: 1 },
-    { seed: 0, seconds: 300 },
-    { seed: 2_147_483_647, seconds: 1 },
-    { seed: 2_147_483_647, seconds: 300 },
-  ];
+test('browser game loop is wired to shared core step function', () => {
+  const gamePath = path.resolve(process.cwd(), '../src/game.ts');
+  const source = fs.readFileSync(gamePath, 'utf8');
 
-  for (const input of boundaryCases) {
-    const first = runSimulation(input);
-    const second = runSimulation(input);
-    assert.deepEqual(second, first);
-  }
+  assert.match(source, /from '\.\/core\/stepGame'/);
+  assert.match(source, /stepGame\(this\.coreState/);
 });
