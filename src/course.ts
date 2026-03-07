@@ -231,45 +231,6 @@ export class CourseGenerator {
   }
 
   /**
-   * Create dense trees with natural flow (harder section)
-   */
-  private createDenseTrees(startY: number, endY: number, densityMultiplier: number): CourseObject[] {
-    const objects: CourseObject[] = [];
-    let y = startY + 80;
-    const baseSpacing = 110;
-    
-    while (y < endY) {
-      // Vary spacing organically
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 40 - 20, densityMultiplier); // density scales spacing
-      
-      // Create sweeping curve
-      const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 4) * 0.18; // Sweeping S-curve
-      
-      // Place trees along the curve with variation
-      const baseTreeCount = 2 + Math.floor(Math.random() * 1.5); // 2-3 trees (lean toward 2)
-      const basePositions = [0.2, 0.45, 0.7, 0.85];
-      const numTrees = this.scaleTreeCount(baseTreeCount, densityMultiplier, basePositions.length - 1); // density scales count
-      
-      // Select positions and add curve
-      const selected: number[] = [];
-      for (let i = 0; i < numTrees; i++) {
-        let pos = basePositions[Math.floor(Math.random() * basePositions.length)];
-        while (selected.includes(pos)) {
-          pos = basePositions[Math.floor(Math.random() * basePositions.length)];
-        }
-        selected.push(pos);
-        const finalX = pos + curve + (Math.random() * 0.08 - 0.04);
-        objects.push({ type: 'tree', x: Math.max(0.1, Math.min(0.9, finalX)), y });
-      }
-      
-      y += spacing;
-    }
-    
-    return objects;
-  }
-
-  /**
    * Create flowing zigzag pattern (like carving turns)
    */
   private createZigzagPattern(startY: number, endY: number, densityMultiplier: number): CourseObject[] {

@@ -4,6 +4,8 @@ import { Tree } from './tree';
 import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
 import { BASE_SCROLL_SPEED } from './constants';
+import { createInitialGameState, stepGame } from './core/stepGame';
+import { CoreGameState, CoreTree, StepCommand } from './core/types';
 const SPAWN_GAP = 220; // world units behind the player at spawn
 const MAX_SPEED_INCREASE_FACTOR = 0.35;
 
@@ -13,6 +15,7 @@ export class Game {
   private skier: Skier;
   private abominableSnowman: AbominableSnowman;
   private gameState: GameState;
+  private coreState!: CoreGameState;
   private animationFrameId: number | null = null;
   private worldOffset: number = 0; // How far we've scrolled
   private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (ramped)
@@ -40,6 +43,7 @@ export class Game {
   private densityDebounceId: number | null = null;
   private pendingDensityMultiplier: number | null = null;
   private regenAnimationFrameId: number | null = null;
+  private pendingStepCommands: StepCommand[] = [];
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -88,6 +92,9 @@ export class Game {
     if (this.useCourseSystem) {
       this.loadCourse();
     }
+
+    this.coreState = this.createCoreState(this.toCoreTrees(this.trees), this.gameState.targetDistance);
+    this.syncRuntimeFromCoreState();
     
     // Load tree image
     this.loadTreeImage();
@@ -392,6 +399,7 @@ export class Game {
     // Resume game
     if ((this as any).pausedScrollSpeed !== undefined) {
       this.currentScrollSpeed = (this as any).pausedScrollSpeed;
+      this.coreState.currentScrollSpeed = this.currentScrollSpeed;
       (this as any).pausedScrollSpeed = 0;
       console.log('Game resumed, scroll speed:', this.currentScrollSpeed);
     }
@@ -430,6 +438,7 @@ export class Game {
       if (this.currentScrollSpeed > 0) {
         (this as any).pausedScrollSpeed = this.currentScrollSpeed;
         this.currentScrollSpeed = 0;
+        this.coreState.currentScrollSpeed = 0;
         console.log('Game paused, scroll speed:', this.currentScrollSpeed);
       }
     }
@@ -460,6 +469,7 @@ export class Game {
     this.baseScrollSpeed = this.startingScrollSpeed;
     this.currentScrollSpeed = this.baseScrollSpeed;
     this.isSpeedBoosted = false;
+    this.pendingStepCommands = [];
 
     // Reset skier position
     this.skier = new Skier(
@@ -476,6 +486,9 @@ export class Game {
     if (this.useCourseSystem) {
       this.loadCourse();
     }
+
+    this.coreState = this.createCoreState(this.toCoreTrees(this.trees), this.gameState.targetDistance);
+    this.syncRuntimeFromCoreState();
 
     // Hide retry button
     if (this.retryButton) {
@@ -522,6 +535,10 @@ export class Game {
     
     // Update target distance to match course length
     this.gameState.targetDistance = this.currentCourse.totalLength;
+    if (this.coreState) {
+      this.coreState.targetDistance = this.gameState.targetDistance;
+      this.coreState.trees = this.toCoreTrees(this.trees);
+    }
   }
 
   private buildTreesFromObjects(objects: CourseObject[]): Tree[] {
@@ -557,24 +574,26 @@ export class Game {
     this.trees = [...keptTrees, ...aheadTrees];
     this.currentCourse = newCourse;
     this.gameState.targetDistance = newCourse.totalLength;
+    this.coreState.targetDistance = this.gameState.targetDistance;
+    this.coreState.trees = this.toCoreTrees(this.trees);
   }
 
 
   private setupEventListeners(): void {
     window.addEventListener('keydown', (e) => {
+      const atMs = performance.now();
       switch (e.key) {
         case 'ArrowLeft':
-          this.skier.setDirection('left');
+          this.pendingStepCommands.push({ direction: 'left', atMs });
           break;
         case 'ArrowRight':
-          this.skier.setDirection('right');
+          this.pendingStepCommands.push({ direction: 'right', atMs });
           break;
         case 'ArrowDown':
-          this.handleSpeedBoost();
+          this.pendingStepCommands.push({ direction: 'down', atMs });
           break;
         case 'ArrowUp':
-          // Stop scrolling
-          this.currentScrollSpeed = 0;
+          this.pendingStepCommands.push({ direction: 'up', atMs });
           break;
         case 'h':
         case 'H':
@@ -584,39 +603,16 @@ export class Game {
     });
   }
 
-  private handleSpeedBoost(): void {
-    const now = Date.now();
-    const lastPressTime = (this as any).lastDownPressTime || 0;
-    const consecutivePressWindow = 300; // milliseconds
-    
-    // Check if this is a consecutive down press
-    const isConsecutive = this.isSpeedBoosted && 
-                         (now - lastPressTime) < consecutivePressWindow;
-    
-    if (isConsecutive) {
-      // Double press = speed boost
-      this.currentScrollSpeed = this.baseScrollSpeed * 2;
-      this.isSpeedBoosted = true;
-    } else {
-      // Single press = regular speed
-      this.currentScrollSpeed = this.baseScrollSpeed;
-      this.isSpeedBoosted = true;
-    }
-    
-    (this as any).lastDownPressTime = now;
-  }
-
   start(): void {
     if (this.gameState.isRunning) return;
-    
-    this.abominableSnowman.position.x = this.canvas.width / 2;
-    this.abominableSnowman.reset(this.worldOffset, SPAWN_GAP);
+    this.coreState.isRunning = true;
     this.gameState.isRunning = true;
     this.lastFrameTime = null;
     this.gameLoop();
   }
 
   stop(): void {
+    this.coreState.isRunning = false;
     this.gameState.isRunning = false;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
@@ -641,112 +637,10 @@ export class Game {
   }
 
   private update(dt: number): void {
-    // Don't update game logic when complete or crashed, but still allow UI interactions
-    if (this.gameState.runComplete || this.gameState.crashed) {
-      // Stop scrolling when complete or crashed
-      this.currentScrollSpeed = 0;
-      return;
-    }
-
-    const distanceProgress = this.getDistanceProgress();
-    this.updateScrollSpeedRamp(distanceProgress);
-
-    // World scrolls automatically (unless stopped)
-    if (this.currentScrollSpeed > 0) {
-      this.worldOffset += this.currentScrollSpeed * dt;
-      this.gameState.distanceTraveled = this.worldOffset;
-    }
-
-    // Update skier (only horizontal movement)
-    // Only update X position, keep Y fixed
-    const fixedY = this.skier.position.y;
-    this.skier.update();
-    this.skier.position.y = fixedY; // Lock Y position
-
-    // Update abominable snowman (chase skier)
-    const snowmanCaught = this.abominableSnowman.update(
-      this.skier.position.x,
-      this.worldOffset,
-      this.currentScrollSpeed,
-      dt,
-      distanceProgress
-    );
-    if (snowmanCaught) {
-      this.gameState.crashed = true;
-      this.currentScrollSpeed = 0;
-      return;
-    }
-
-    // Check for collisions with trees
-    this.checkCollisions();
-
-    // Course system: All objects are pre-loaded, no need to spawn during gameplay
-    // The course is already fully generated when the game starts
-
-    // Remove trees that are off screen
-    this.trees = this.trees.filter(tree => {
-      return !tree.isOffScreen(this.worldOffset);
-    });
-
-    // Check if run is complete
-    if (this.gameState.distanceTraveled >= this.gameState.targetDistance) {
-      this.gameState.runComplete = true;
-      this.gameState.distanceTraveled = this.gameState.targetDistance; // Cap at target
-    }
-
-    // Keep skier within horizontal bounds only
-    if (this.skier.position.x < 0) this.skier.position.x = 0;
-    if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
-  }
-
-  private updateScrollSpeedRamp(distanceProgress: number): void {
-    const previousBaseSpeed = this.baseScrollSpeed;
-
-    this.baseScrollSpeed = this.startingScrollSpeed +
-      (distanceProgress * this.maxScrollSpeedIncrease);
-
-    if (this.currentScrollSpeed > 0) {
-      const speedMultiplier = previousBaseSpeed > 0
-        ? this.currentScrollSpeed / previousBaseSpeed
-        : 1;
-      this.currentScrollSpeed = this.baseScrollSpeed * speedMultiplier;
-    }
-  }
-
-  private getDistanceProgress(): number {
-    if (this.gameState.targetDistance <= 0) return 0;
-    return Math.min(1, Math.max(0, this.gameState.distanceTraveled / this.gameState.targetDistance));
-  }
-
-  private checkCollisions(): void {
-    const skierX = this.skier.position.x;
-    const skierY = this.skier.position.y;
-    
-    // Skier bounding box (skier is drawn centered at its position)
-    const skierLeft = skierX - this.skier.width / 2;
-    const skierRight = skierX + this.skier.width / 2;
-    const skierTop = skierY - this.skier.height / 2;
-    const skierBottom = skierY + this.skier.height / 2;
-
-    // Check collision with each tree
-    for (const tree of this.trees) {
-      // Calculate tree's screen position (accounting for camera scroll)
-      const treeScreenY = tree.position.y - this.worldOffset;
-      
-      // Tree bounding box (trees are drawn upward from their Y position)
-      const treeLeft = tree.position.x - tree.width / 2;
-      const treeRight = tree.position.x + tree.width / 2;
-      const treeTop = treeScreenY - tree.height;
-      const treeBottom = treeScreenY;
-
-      // Check if skier rectangle intersects with tree rectangle
-      if (skierLeft < treeRight && skierRight > treeLeft &&
-          skierTop < treeBottom && skierBottom > treeTop) {
-        this.gameState.crashed = true;
-        this.currentScrollSpeed = 0;
-        return;
-      }
-    }
+    const commands = this.pendingStepCommands;
+    this.pendingStepCommands = [];
+    this.coreState = stepGame(this.coreState, { commands }, dt);
+    this.syncRuntimeFromCoreState();
   }
 
   private render(): void {
@@ -914,6 +808,55 @@ export class Game {
     }
 
     this.ctx.restore();
+  }
+
+  private createCoreState(trees: CoreTree[], targetDistance: number): CoreGameState {
+    return createInitialGameState({
+      canvasWidth: this.canvas.width,
+      canvasHeight: this.canvas.height,
+      targetDistance,
+      trees,
+      spawnGap: SPAWN_GAP,
+      startingScrollSpeed: this.startingScrollSpeed,
+      maxScrollSpeedIncrease: this.maxScrollSpeedIncrease
+    });
+  }
+
+  private toCoreTrees(trees: Tree[]): CoreTree[] {
+    return trees.map((tree) => ({
+      x: tree.position.x,
+      y: tree.position.y,
+      width: tree.width,
+      height: tree.height
+    }));
+  }
+
+  private syncRuntimeFromCoreState(): void {
+    this.worldOffset = this.coreState.worldOffset;
+    this.baseScrollSpeed = this.coreState.baseScrollSpeed;
+    this.currentScrollSpeed = this.coreState.currentScrollSpeed;
+    this.isSpeedBoosted = this.coreState.isSpeedBoosted;
+
+    this.gameState.isRunning = this.coreState.isRunning;
+    this.gameState.score = this.coreState.score;
+    this.gameState.level = this.coreState.level;
+    this.gameState.distanceTraveled = this.coreState.distanceTraveled;
+    this.gameState.targetDistance = this.coreState.targetDistance;
+    this.gameState.runComplete = this.coreState.runComplete;
+    this.gameState.crashed = this.coreState.crashed;
+
+    this.skier.position.x = this.coreState.skier.x;
+    this.skier.position.y = this.coreState.skier.y;
+    this.skier.velocity.vx = this.coreState.skier.vx;
+    this.skier.velocity.vy = this.coreState.skier.vy;
+    this.skier.direction = this.coreState.skier.direction;
+
+    this.abominableSnowman.position.x = this.coreState.snowman.x;
+    this.abominableSnowman.worldY = this.coreState.snowman.worldY;
+
+    this.trees = this.coreState.trees.map(
+      (tree) => new Tree(tree.x, tree.y, tree.width, tree.height)
+    );
   }
 
 }
