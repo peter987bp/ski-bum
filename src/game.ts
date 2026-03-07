@@ -4,39 +4,8 @@ import { Tree } from './tree';
 import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
 import { BASE_SCROLL_SPEED } from './constants';
-<<<<<<< Updated upstream
 const SPAWN_GAP = 220; // world units behind the player at spawn
 const MAX_SPEED_INCREASE_FACTOR = 0.35;
-=======
-import { WindSystem } from './wind';
-const LEGACY_FPS = 60;
-const SPAWN_GAP = 220; // world units behind the player at spawn
-
-const WIND_PARTICLE_SETTINGS = {
-  count: 36,
-  radiusMin: 0.6,
-  radiusMax: 1.5,
-  opacityMin: 0.15,
-  opacityMax: 0.35,
-  driftMin: -0.15 * LEGACY_FPS,
-  driftMax: 0.15 * LEGACY_FPS,
-  fallSpeedMin: 0.2 * LEGACY_FPS,
-  fallSpeedMax: 0.6 * LEGACY_FPS,
-  windDriftScale: 1.3,
-  margin: 20
-};
-
-type WindParticle = {
-  x: number;
-  y: number;
-  radius: number;
-  opacity: number;
-  drift: number;
-  fallSpeed: number;
-};
-
-const randomRange = (min: number, max: number): number => min + Math.random() * (max - min);
->>>>>>> Stashed changes
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -46,17 +15,11 @@ export class Game {
   private gameState: GameState;
   private animationFrameId: number | null = null;
   private worldOffset: number = 0; // How far we've scrolled
-<<<<<<< Updated upstream
   private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (ramped)
   private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (can be boosted)
   private readonly startingScrollSpeed: number = BASE_SCROLL_SPEED;
   private readonly maxScrollSpeedIncrease: number = BASE_SCROLL_SPEED * MAX_SPEED_INCREASE_FACTOR;
-=======
-  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (per second)
-  private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (per second, can be boosted)
->>>>>>> Stashed changes
   private isSpeedBoosted: boolean = false; // Track if speed is boosted
-  private speedMultiplier: number = 1; // Global speed/time scale for movement
   private trees: Tree[] = []; // Array of trees
   private courseGenerator: CourseGenerator; // Course generator
   private currentCourse: Course | null = null; // Current course
@@ -66,16 +29,7 @@ export class Game {
   private retryButton: HTMLButtonElement | null = null; // Retry button DOM element
   private menuOverlay: HTMLDivElement | null = null; // Menu overlay DOM element
   private menuCloseButton: HTMLButtonElement | null = null; // Menu close button DOM element
-<<<<<<< Updated upstream
   private lastFrameTime: number | null = null; // For normalized dt updates
-=======
-  private lastFrameTime: number | null = null; // For dtSec updates
-  private lastDtSec: number = 1 / LEGACY_FPS;
-  private windSystem: WindSystem;
-  private skierInputVelocity = { vx: 0, vy: 0 };
-  private windParticles: WindParticle[] = [];
-  private lastWindForce: number = 0;
->>>>>>> Stashed changes
   private debugHudEnabled: boolean = false;
   private treeDensityMultiplier: number = 1.0;
   private treeDensitySlider: HTMLInputElement | null = null;
@@ -120,13 +74,6 @@ export class Game {
       this.canvas.width / 2,  // Center horizontally
       this.canvas.height / 3  // Upper third of screen
     );
-<<<<<<< Updated upstream
-=======
-    this.skierInputVelocity = { vx: this.skier.velocity.vx, vy: this.skier.velocity.vy };
-    this.windSystem = new WindSystem();
-    this.lastWindForce = 0;
-    this.initWindParticles();
->>>>>>> Stashed changes
 
     // Abominable snowman starts behind the skier in world space
     this.abominableSnowman = new AbominableSnowman(
@@ -519,10 +466,6 @@ export class Game {
       this.canvas.width / 2,
       this.canvas.height / 3
     );
-    this.skierInputVelocity = { vx: this.skier.velocity.vx, vy: this.skier.velocity.vy };
-    this.windSystem = new WindSystem();
-    this.lastWindForce = 0;
-    this.initWindParticles();
 
     // Reset abominable snowman
     this.abominableSnowman.position.x = this.canvas.width / 2;
@@ -622,11 +565,9 @@ export class Game {
       switch (e.key) {
         case 'ArrowLeft':
           this.skier.setDirection('left');
-          this.syncSkierInputVelocity();
           break;
         case 'ArrowRight':
           this.skier.setDirection('right');
-          this.syncSkierInputVelocity();
           break;
         case 'ArrowDown':
           this.handleSpeedBoost();
@@ -665,70 +606,6 @@ export class Game {
     (this as any).lastDownPressTime = now;
   }
 
-  private syncSkierInputVelocity(): void {
-    this.skierInputVelocity.vx = this.skier.velocity.vx;
-    this.skierInputVelocity.vy = this.skier.velocity.vy;
-  }
-
-  private initWindParticles(): void {
-    this.windParticles = [];
-    for (let i = 0; i < WIND_PARTICLE_SETTINGS.count; i++) {
-      this.windParticles.push(this.createWindParticle(true));
-    }
-  }
-
-  private createWindParticle(randomizeY: boolean): WindParticle {
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-    return {
-      x: randomRange(0, width),
-      y: randomizeY ? randomRange(0, height) : -WIND_PARTICLE_SETTINGS.margin,
-      radius: randomRange(WIND_PARTICLE_SETTINGS.radiusMin, WIND_PARTICLE_SETTINGS.radiusMax),
-      opacity: randomRange(WIND_PARTICLE_SETTINGS.opacityMin, WIND_PARTICLE_SETTINGS.opacityMax),
-      drift: randomRange(WIND_PARTICLE_SETTINGS.driftMin, WIND_PARTICLE_SETTINGS.driftMax),
-      fallSpeed: randomRange(WIND_PARTICLE_SETTINGS.fallSpeedMin, WIND_PARTICLE_SETTINGS.fallSpeedMax)
-    };
-  }
-
-  private resetWindParticle(particle: WindParticle): void {
-    particle.x = randomRange(0, this.canvas.width);
-    particle.y = -WIND_PARTICLE_SETTINGS.margin;
-    particle.radius = randomRange(WIND_PARTICLE_SETTINGS.radiusMin, WIND_PARTICLE_SETTINGS.radiusMax);
-    particle.opacity = randomRange(WIND_PARTICLE_SETTINGS.opacityMin, WIND_PARTICLE_SETTINGS.opacityMax);
-    particle.drift = randomRange(WIND_PARTICLE_SETTINGS.driftMin, WIND_PARTICLE_SETTINGS.driftMax);
-    particle.fallSpeed = randomRange(WIND_PARTICLE_SETTINGS.fallSpeedMin, WIND_PARTICLE_SETTINGS.fallSpeedMax);
-  }
-
-  private updateWindParticles(dtSec: number, windForce: number): void {
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-    const margin = WIND_PARTICLE_SETTINGS.margin;
-    const windDrift = windForce * WIND_PARTICLE_SETTINGS.windDriftScale * dtSec;
-
-    for (const particle of this.windParticles) {
-      particle.x += (particle.drift * dtSec) + windDrift;
-      particle.y += particle.fallSpeed * dtSec;
-
-      if (particle.x < -margin || particle.x > width + margin || particle.y > height + margin) {
-        this.resetWindParticle(particle);
-      }
-    }
-  }
-
-  private drawWindParticles(): void {
-    if (this.windParticles.length === 0) return;
-
-    this.ctx.save();
-    this.ctx.fillStyle = '#E0E0E0';
-    for (const particle of this.windParticles) {
-      this.ctx.globalAlpha = particle.opacity;
-      this.ctx.beginPath();
-      this.ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
-      this.ctx.fill();
-    }
-    this.ctx.restore();
-  }
-
   start(): void {
     if (this.gameState.isRunning) return;
     
@@ -750,21 +627,20 @@ export class Game {
   private gameLoop(timestamp: number = performance.now()): void {
     if (!this.gameState.isRunning) return;
 
-    let dtSec = 1 / LEGACY_FPS;
+    let dt = 1;
     if (this.lastFrameTime !== null) {
-      dtSec = (timestamp - this.lastFrameTime) / 1000;
+      const deltaMs = timestamp - this.lastFrameTime;
+      dt = Math.min(2, deltaMs / (1000 / 60));
     }
-    dtSec = Math.min(dtSec, 0.05);
     this.lastFrameTime = timestamp;
-    this.lastDtSec = dtSec;
 
-    this.update(dtSec);
+    this.update(dt);
     this.render();
 
     this.animationFrameId = requestAnimationFrame((t) => this.gameLoop(t));
   }
 
-  private update(dtSec: number): void {
+  private update(dt: number): void {
     // Don't update game logic when complete or crashed, but still allow UI interactions
     if (this.gameState.runComplete || this.gameState.crashed) {
       // Stop scrolling when complete or crashed
@@ -772,39 +648,19 @@ export class Game {
       return;
     }
 
-<<<<<<< Updated upstream
     const distanceProgress = this.getDistanceProgress();
     this.updateScrollSpeedRamp(distanceProgress);
-=======
-    const scaledDtSec = dtSec * this.speedMultiplier;
->>>>>>> Stashed changes
 
     // World scrolls automatically (unless stopped)
     if (this.currentScrollSpeed > 0) {
-      this.worldOffset += this.currentScrollSpeed * scaledDtSec;
+      this.worldOffset += this.currentScrollSpeed * dt;
       this.gameState.distanceTraveled = this.worldOffset;
-    }
-
-    const windActive = this.currentScrollSpeed > 0 && scaledDtSec > 0;
-    let windForce = 0;
-    if (windActive) {
-      this.windSystem.update(scaledDtSec, this.gameState.distanceTraveled);
-      windForce = this.windSystem.getForce();
-    }
-    this.lastWindForce = windActive ? windForce : 0;
-
-    const windVelocity = windForce;
-    this.skier.velocity.vx = this.skierInputVelocity.vx + windVelocity;
-    this.skier.velocity.vy = this.skierInputVelocity.vy;
-
-    if (windActive) {
-      this.updateWindParticles(scaledDtSec, windForce);
     }
 
     // Update skier (only horizontal movement)
     // Only update X position, keep Y fixed
     const fixedY = this.skier.position.y;
-    this.skier.update(scaledDtSec);
+    this.skier.update();
     this.skier.position.y = fixedY; // Lock Y position
 
     // Update abominable snowman (chase skier)
@@ -812,12 +668,8 @@ export class Game {
       this.skier.position.x,
       this.worldOffset,
       this.currentScrollSpeed,
-<<<<<<< Updated upstream
       dt,
       distanceProgress
-=======
-      scaledDtSec
->>>>>>> Stashed changes
     );
     if (snowmanCaught) {
       this.gameState.crashed = true;
@@ -916,9 +768,6 @@ export class Game {
 
     // Restore context (skier drawn at fixed position, not affected by scroll)
     this.ctx.restore();
-
-    // Subtle wind feedback in screen space
-    this.drawWindParticles();
 
     // Draw skier at FIXED screen position (not affected by camera)
     this.skier.draw(this.ctx);
@@ -1032,10 +881,7 @@ export class Game {
       `Section: ${sectionName || '(unknown)'}`,
       `Base speed: ${this.baseScrollSpeed.toFixed(2)}`,
       `Current speed: ${this.currentScrollSpeed.toFixed(2)}`,
-      `Speed multiplier: ${this.speedMultiplier.toFixed(2)}`,
-      `Boosted: ${this.isSpeedBoosted ? 'true' : 'false'}`,
-      `dt: ${this.lastDtSec.toFixed(4)}s`,
-      `Wind force: ${this.lastWindForce.toFixed(2)}`
+      `Boosted: ${this.isSpeedBoosted ? 'true' : 'false'}`
     ];
 
     const padding = 10;
