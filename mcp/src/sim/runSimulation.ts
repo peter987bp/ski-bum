@@ -1,12 +1,13 @@
 import {
-  CoreObstacle,
   GameCoreConfig,
   GameCoreState,
   GameInput,
   createDefaultGameCoreConfig,
   createInitialGameState,
-  stepGame,
+  stepGameFixed,
 } from "../../../src/core/gameCore.js";
+import { CourseGenerator } from "../../../src/course.js";
+import { buildCoreObstaclesFromCourseObjects } from "../../../src/core/progression.js";
 
 type SimulationInput = {
   seed: number;
@@ -55,11 +56,14 @@ export function initSimulation(seed: number, secondsInput: number): SimulationSt
     worldWidth: 800,
     playerStartX: 400,
     playerScreenY: 200,
-    targetDistance: 5000,
     baseScrollSpeed: 1.45 * 60,
   });
 
-  const obstacles = generateSeededObstacles(rand, coreConfig.worldWidth, 5600);
+  const courseGenerator = new CourseGenerator(coreConfig.worldWidth, rand);
+  const course = courseGenerator.createSimpleCourse(1.0);
+  const objects = courseGenerator.getAllObjects(course);
+  const obstacles = buildCoreObstaclesFromCourseObjects(objects, rand);
+  coreConfig.targetDistance = course.totalLength;
   const coreState = createInitialGameState({
     config: coreConfig,
     obstacles,
@@ -84,7 +88,7 @@ export function stepSimulation(state: SimulationState, dtSec: number = state.dtS
   }
 
   const input = nextDeterministicInput(state.rand);
-  state.coreState = stepGame(state.coreState, input, dtSec, state.coreConfig);
+  state.coreState = stepGameFixed(state.coreState, input, dtSec, 1, state.coreConfig);
   state.stepIndex += 1;
 
   if (state.coreState.crashed) {
@@ -123,39 +127,6 @@ function nextDeterministicInput(rand: () => number): GameInput {
   if (roll < 0.165) return { intent: "up", justPressed: true };
 
   return { intent: "none", justPressed: false };
-}
-
-function generateSeededObstacles(rand: () => number, worldWidth: number, maxY: number): CoreObstacle[] {
-  const obstacles: CoreObstacle[] = [];
-  const lanes = [0.12, 0.28, 0.72, 0.88];
-  let y = 320;
-
-  while (y <= maxY) {
-    const laneCountRoll = rand();
-    const laneCount = laneCountRoll < 0.25 ? 1 : laneCountRoll < 0.75 ? 2 : 3;
-    const chosen = new Set<number>();
-
-    while (chosen.size < laneCount) {
-      const laneIdx = Math.floor(rand() * lanes.length);
-      chosen.add(laneIdx);
-    }
-
-    for (const laneIdx of chosen) {
-      const jitter = (rand() - 0.5) * 24;
-      const sizeScale = 0.8 + rand() * 0.4;
-      obstacles.push({
-        type: "tree",
-        x: lanes[laneIdx] * worldWidth + jitter,
-        y,
-        width: 40 * sizeScale,
-        height: 60 * sizeScale,
-      });
-    }
-
-    y += 105 + rand() * 70;
-  }
-
-  return obstacles;
 }
 
 function round2(value: number): number {

@@ -86,12 +86,13 @@ export interface CreateInitialGameStateOptions {
 
 const LEGACY_FPS = 60;
 const BASE_SCROLL_SPEED_PER_SECOND = 1.45 * LEGACY_FPS;
+const CONFIG_EPSILON = 0.000001;
 
 export function createDefaultGameCoreConfig(overrides: Partial<GameCoreConfig> = {}): GameCoreConfig {
   const worldWidth = overrides.worldWidth ?? 800;
   const playerStartX = overrides.playerStartX ?? worldWidth / 2;
 
-  return {
+  return sanitizeGameCoreConfig({
     worldWidth,
     playerStartX,
     playerScreenY: overrides.playerScreenY ?? 600 / 3,
@@ -114,7 +115,7 @@ export function createDefaultGameCoreConfig(overrides: Partial<GameCoreConfig> =
     snowmanCatchThreshold: overrides.snowmanCatchThreshold ?? 18,
     snowmanChaseRampStart: overrides.snowmanChaseRampStart ?? 0.62,
     snowmanChaseRampEnd: overrides.snowmanChaseRampEnd ?? 0.8,
-  };
+  });
 }
 
 export function createInitialGameState(options: CreateInitialGameStateOptions): GameCoreState {
@@ -168,7 +169,17 @@ export function stepGame(
   dtSec: number,
   config: GameCoreConfig
 ): GameCoreState {
+  if (prevState.runComplete || prevState.crashed) {
+    const terminalState = cloneState(prevState);
+    terminalState.scroll.currentSpeed = 0;
+    return terminalState;
+  }
+
   const dt = sanitizeDt(dtSec);
+  if (dt === 0) {
+    return cloneState(prevState);
+  }
+  const safeConfig = sanitizeGameCoreConfig(config);
   const nextElapsed = prevState.elapsedSec + dt;
 
   let state = {
@@ -181,12 +192,7 @@ export function stepGame(
     obstacles: prevState.obstacles,
   };
 
-  state = applyInput(state, input, config);
-
-  if (state.runComplete || state.crashed) {
-    state.scroll.currentSpeed = 0;
-    return state;
-  }
+  state = applyInput(state, input, safeConfig);
 
   const distanceProgress = getDistanceProgress(state.distanceTraveled, state.targetDistance);
   const previousBaseSpeed = state.scroll.baseSpeed;
@@ -202,26 +208,33 @@ export function stepGame(
     state.distanceTraveled = state.worldOffset;
   }
 
-  state.player.x += state.player.velocityX * dt;
-  state.player.x = clamp(state.player.x, 0, config.worldWidth);
+  const reachedFinish = state.distanceTraveled >= state.targetDistance;
 
-  state = stepSnowman(state, dt, config);
-  if (state.crashed) {
+  state.player.x += state.player.velocityX * dt;
+  state.player.x = clamp(state.player.x, 0, safeConfig.worldWidth);
+
+  const snowmanCaught = stepSnowman(state, dt, safeConfig);
+  const treeCollision = hasTreeCollision(state.player, state.obstacles, state.worldOffset);
+
+  // Explicit outcome precedence for same-step conflicts: snowman > tree > finish.
+  if (snowmanCaught) {
+    state.crashed = true;
+    state.crashReason = 'snowman_catch';
     state.scroll.currentSpeed = 0;
     return state;
   }
 
-  if (hasTreeCollision(state.player, state.obstacles, state.worldOffset)) {
+  if (treeCollision) {
     state.crashed = true;
     state.crashReason = 'tree_collision';
     state.scroll.currentSpeed = 0;
     return state;
   }
 
-  const cullCutoff = state.worldOffset - config.obstacleCullBuffer;
+  const cullCutoff = state.worldOffset - safeConfig.obstacleCullBuffer;
   state.obstacles = state.obstacles.filter((obstacle) => obstacle.y >= cullCutoff);
 
-  if (state.distanceTraveled >= state.targetDistance) {
+  if (reachedFinish) {
     state.runComplete = true;
     state.distanceTraveled = state.targetDistance;
     state.worldOffset = state.targetDistance;
@@ -301,7 +314,7 @@ function applyInput(state: GameCoreState, input: GameInput, config: GameCoreConf
   return state;
 }
 
-function stepSnowman(state: GameCoreState, dt: number, config: GameCoreConfig): GameCoreState {
+function stepSnowman(state: GameCoreState, dt: number, config: GameCoreConfig): boolean {
   const playerWorldY = state.worldOffset;
   const dx = state.player.x - state.snowman.x;
 
@@ -313,9 +326,7 @@ function stepSnowman(state: GameCoreState, dt: number, config: GameCoreConfig): 
   const safeScrollSpeed = Math.max(0, state.scroll.currentSpeed);
   const gap = playerWorldY - state.snowman.worldY;
   if (gap <= config.snowmanCatchThreshold) {
-    state.crashed = true;
-    state.crashReason = 'snowman_catch';
-    return state;
+    return true;
   }
 
   const gapFactor = clamp01(1 - gap / config.snowmanCloseRangeDistance);
@@ -336,12 +347,7 @@ function stepSnowman(state: GameCoreState, dt: number, config: GameCoreConfig): 
   );
   state.snowman.worldY += chaseSpeed * dt;
 
-  if ((playerWorldY - state.snowman.worldY) <= config.snowmanCatchThreshold) {
-    state.crashed = true;
-    state.crashReason = 'snowman_catch';
-  }
-
-  return state;
+  return (playerWorldY - state.snowman.worldY) <= config.snowmanCatchThreshold;
 }
 
 function hasTreeCollision(
@@ -380,8 +386,59 @@ function getDistanceProgress(distanceTraveled: number, targetDistance: number): 
 }
 
 function sanitizeDt(dtSec: number): number {
-  if (!Number.isFinite(dtSec) || dtSec <= 0) return 1 / 60;
+  if (!Number.isFinite(dtSec) || dtSec <= 0) return 0;
   return Math.min(0.1, dtSec);
+}
+
+function cloneState(state: GameCoreState): GameCoreState {
+  return {
+    ...state,
+    player: { ...state.player },
+    scroll: { ...state.scroll },
+    snowman: { ...state.snowman },
+    inputHistory: { ...state.inputHistory },
+    obstacles: state.obstacles.slice(),
+  };
+}
+
+function sanitizeGameCoreConfig(config: GameCoreConfig): GameCoreConfig {
+  const worldWidth = sanitizeNumber(config.worldWidth, 800, CONFIG_EPSILON, Number.POSITIVE_INFINITY);
+  const targetDistance = sanitizeNumber(config.targetDistance, 5000, 0, Number.POSITIVE_INFINITY);
+  const baseScrollSpeed = sanitizeNumber(config.baseScrollSpeed, BASE_SCROLL_SPEED_PER_SECOND, 0, Number.POSITIVE_INFINITY);
+  const chaseRampStart = sanitizeNumber(config.snowmanChaseRampStart, 0.62, 0, 1);
+  const chaseRampEnd = sanitizeNumber(config.snowmanChaseRampEnd, 0.8, chaseRampStart + CONFIG_EPSILON, 1);
+  const playerWidth = sanitizeNumber(config.playerWidth, 30, CONFIG_EPSILON, Number.POSITIVE_INFINITY);
+  const playerHeight = sanitizeNumber(config.playerHeight, 30, CONFIG_EPSILON, Number.POSITIVE_INFINITY);
+
+  return {
+    worldWidth,
+    playerStartX: sanitizeNumber(config.playerStartX, worldWidth / 2, 0, worldWidth),
+    playerScreenY: sanitizeNumber(config.playerScreenY, 600 / 3, 0, Number.POSITIVE_INFINITY),
+    playerWidth,
+    playerHeight,
+    targetDistance,
+    baseScrollSpeed,
+    maxScrollSpeedIncreaseFactor: sanitizeNumber(config.maxScrollSpeedIncreaseFactor, 0.35, 0, Number.POSITIVE_INFINITY),
+    consecutivePressWindowSec: sanitizeNumber(config.consecutivePressWindowSec, 0.3, 0, Number.POSITIVE_INFINITY),
+    skierSpeed: sanitizeNumber(config.skierSpeed, 1.7 * LEGACY_FPS, 0, Number.POSITIVE_INFINITY),
+    skierTurnSpeed: sanitizeNumber(config.skierTurnSpeed, 2.55 * LEGACY_FPS, 0, Number.POSITIVE_INFINITY),
+    skierAggressiveTurnSpeed: sanitizeNumber(config.skierAggressiveTurnSpeed, 5.1 * LEGACY_FPS, 0, Number.POSITIVE_INFINITY),
+    obstacleCullBuffer: sanitizeNumber(config.obstacleCullBuffer, 100, 0, Number.POSITIVE_INFINITY),
+    snowmanSpawnGap: sanitizeNumber(config.snowmanSpawnGap, 220, 0, Number.POSITIVE_INFINITY),
+    snowmanSize: sanitizeNumber(config.snowmanSize, 25, CONFIG_EPSILON, Number.POSITIVE_INFINITY),
+    snowmanXSpeed: sanitizeNumber(config.snowmanXSpeed, 1.15 * LEGACY_FPS, 0, Number.POSITIVE_INFINITY),
+    snowmanCloseRangeDistance: sanitizeNumber(config.snowmanCloseRangeDistance, 160, CONFIG_EPSILON, Number.POSITIVE_INFINITY),
+    snowmanMinCatchup: sanitizeNumber(config.snowmanMinCatchup, 0.6 * LEGACY_FPS, 0, Number.POSITIVE_INFINITY),
+    snowmanMaxCatchup: sanitizeNumber(config.snowmanMaxCatchup, 4.0 * LEGACY_FPS, 0, Number.POSITIVE_INFINITY),
+    snowmanCatchThreshold: sanitizeNumber(config.snowmanCatchThreshold, 18, 0, Number.POSITIVE_INFINITY),
+    snowmanChaseRampStart: chaseRampStart,
+    snowmanChaseRampEnd: chaseRampEnd,
+  };
+}
+
+function sanitizeNumber(value: number, fallback: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return clamp(value, min, max);
 }
 
 function clamp(value: number, min: number, max: number): number {

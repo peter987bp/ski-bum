@@ -9,10 +9,13 @@ import {
   GameCoreConfig,
   GameCoreState,
   GameInput,
+  GameIntent,
   createDefaultGameCoreConfig,
   createInitialGameState,
-  stepGame,
+  stepGameFixed,
 } from './core/gameCore';
+import { buildCoreObstaclesFromCourseObjects } from './core/progression';
+import { shouldQueueGameplayInput } from './inputPolicy';
 const SPAWN_GAP = 220; // world units behind the player at spawn
 
 export class Game {
@@ -37,6 +40,9 @@ export class Game {
   private menuOverlay: HTMLDivElement | null = null; // Menu overlay DOM element
   private menuCloseButton: HTMLButtonElement | null = null; // Menu close button DOM element
   private lastFrameTime: number | null = null; // For normalized dt updates
+  private fixedStepSec: number = 1 / 60;
+  private maxFrameSec: number = 0.25;
+  private accumulatorSec: number = 0;
   private debugHudEnabled: boolean = false;
   private treeDensityMultiplier: number = 1.0;
   private treeDensitySlider: HTMLInputElement | null = null;
@@ -49,8 +55,10 @@ export class Game {
   private regenAnimationFrameId: number | null = null;
   private coreConfig: GameCoreConfig;
   private coreState: GameCoreState;
-  private pendingInput: GameInput = { intent: 'none', justPressed: false };
+  private pendingInputs: GameIntent[] = [];
   private obstacles: CoreObstacle[] = [];
+  private isMenuPaused: boolean = false;
+  private readonly rng: () => number;
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -107,8 +115,9 @@ export class Game {
       worldOffset: this.worldOffset,
     });
 
+    this.rng = createBrowserRngFromSeed();
     // Initialize course generator
-    this.courseGenerator = new CourseGenerator(this.canvas.width);
+    this.courseGenerator = new CourseGenerator(this.canvas.width, this.rng);
     
     // Load and setup course
     if (this.useCourseSystem) {
@@ -413,14 +422,11 @@ export class Game {
     // Force close the menu
     this.menuOverlay.style.display = 'none';
     this.menuOverlay.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
+    this.isMenuPaused = false;
+    this.pendingInputs = [];
+    this.lastFrameTime = null;
+    this.accumulatorSec = 0;
     console.log('Menu closed - display set to: none');
-    
-    // Resume game
-    if ((this as any).pausedScrollSpeed !== undefined) {
-      this.currentScrollSpeed = (this as any).pausedScrollSpeed;
-      (this as any).pausedScrollSpeed = 0;
-      console.log('Game resumed, scroll speed:', this.currentScrollSpeed);
-    }
     
     // Verify the change
     const newDisplay = window.getComputedStyle(this.menuOverlay).display;
@@ -451,13 +457,10 @@ export class Game {
     } else {
       this.menuOverlay.style.display = 'flex';
       this.menuOverlay.style.pointerEvents = 'auto'; // Allow clicks when visible
+      this.isMenuPaused = true;
+      this.pendingInputs = [];
+      this.accumulatorSec = 0;
       console.log('Opening menu - display set to: flex');
-      // Opening menu - pause game
-      if (this.currentScrollSpeed > 0) {
-        (this as any).pausedScrollSpeed = this.currentScrollSpeed;
-        this.currentScrollSpeed = 0;
-        console.log('Game paused, scroll speed:', this.currentScrollSpeed);
-      }
     }
     
     // Verify the change
@@ -486,7 +489,9 @@ export class Game {
     this.baseScrollSpeed = this.startingScrollSpeed;
     this.currentScrollSpeed = this.baseScrollSpeed;
     this.isSpeedBoosted = false;
-    this.pendingInput = { intent: 'none', justPressed: false };
+    this.pendingInputs = [];
+    this.accumulatorSec = 0;
+    this.isMenuPaused = false;
 
     // Reset skier position
     this.skier = new Skier(
@@ -504,7 +509,7 @@ export class Game {
       this.loadCourse();
     }
 
-    this.resetCoreState(this.gameState.targetDistance, this.obstacles);
+    this.initializeCoreState(this.gameState.targetDistance, this.obstacles);
 
     // Hide retry button
     if (this.retryButton) {
@@ -552,32 +557,12 @@ export class Game {
     
     // Update target distance to match course length
     this.gameState.targetDistance = this.currentCourse.totalLength;
-    this.resetCoreState(this.gameState.targetDistance, this.obstacles);
+    this.initializeCoreState(this.gameState.targetDistance, this.obstacles);
   }
 
   private buildObstacleDataFromObjects(objects: CourseObject[]): { trees: Tree[]; obstacles: CoreObstacle[] } {
-    const trees: Tree[] = [];
-    const obstacles: CoreObstacle[] = [];
-
-    objects.forEach(obj => {
-      if (obj.type === 'tree') {
-        const sizeVariation = 0.8 + Math.random() * 0.4;
-        const width = obj.width || (40 * sizeVariation);
-        const height = obj.height || (60 * sizeVariation);
-        const tree = new Tree(obj.x, obj.y, width, height);
-        trees.push(tree);
-        obstacles.push({
-          type: 'tree',
-          x: obj.x,
-          y: obj.y,
-          width,
-          height,
-        });
-      }
-      // Add more object types here as needed
-    });
-
-    return { trees, obstacles };
+    const obstacles = buildCoreObstaclesFromCourseObjects(objects, this.rng);
+    return { trees: this.buildTreesFromObstacles(obstacles), obstacles };
   }
 
   private regenerateAheadCourse(multiplier: number): void {
@@ -591,22 +576,17 @@ export class Game {
     const newCourseObjects = this.courseGenerator.getAllObjects(newCourse);
     const aheadObjects = newCourseObjects.filter(obj => obj.y > cutoffWorldY);
     const aheadData = this.buildObstacleDataFromObjects(aheadObjects);
+    const keptObstacles = this.obstacles.filter(obstacle => obstacle.y <= cutoffWorldY);
 
     this.courseObjects = [...keptObjects, ...aheadObjects];
     this.trees = [...keptTrees, ...aheadData.trees];
-    this.obstacles = this.trees.map((tree) => ({
-      type: 'tree',
-      x: tree.position.x,
-      y: tree.position.y,
-      width: tree.width,
-      height: tree.height,
-    }));
+    this.obstacles = [...keptObstacles, ...aheadData.obstacles];
     this.currentCourse = newCourse;
     this.gameState.targetDistance = newCourse.totalLength;
-    this.resetCoreState(this.gameState.targetDistance, this.obstacles);
+    this.applyProgressionUpdate(this.gameState.targetDistance, this.obstacles);
   }
 
-  private resetCoreState(targetDistance: number, obstacles: CoreObstacle[]): void {
+  private initializeCoreState(targetDistance: number, obstacles: CoreObstacle[]): void {
     this.coreConfig = createDefaultGameCoreConfig({
       ...this.coreConfig,
       targetDistance,
@@ -616,7 +596,27 @@ export class Game {
       obstacles,
       worldOffset: this.worldOffset,
     });
+    this.pendingInputs = [];
+    this.accumulatorSec = 0;
+    this.lastFrameTime = null;
     this.syncLegacyViewState();
+  }
+
+  private applyProgressionUpdate(targetDistance: number, obstacles: CoreObstacle[]): void {
+    this.coreConfig = createDefaultGameCoreConfig({
+      ...this.coreConfig,
+      targetDistance,
+    });
+    this.coreState = {
+      ...this.coreState,
+      targetDistance,
+      obstacles: obstacles.slice(),
+    };
+    this.syncLegacyViewState();
+  }
+
+  private buildTreesFromObstacles(obstacles: CoreObstacle[]): Tree[] {
+    return obstacles.map((obstacle) => new Tree(obstacle.x, obstacle.y, obstacle.width, obstacle.height));
   }
 
 
@@ -643,8 +643,12 @@ export class Game {
     });
   }
 
-  private queueInput(intent: GameInput['intent']): void {
-    this.pendingInput = { intent, justPressed: true };
+  private queueInput(intent: GameIntent): void {
+    const isTerminal = this.coreState.crashed || this.coreState.runComplete;
+    if (!shouldQueueGameplayInput(this.gameState.isRunning, this.isMenuPaused, isTerminal)) {
+      return;
+    }
+    this.pendingInputs.push(intent);
   }
 
   start(): void {
@@ -652,6 +656,7 @@ export class Game {
 
     this.gameState.isRunning = true;
     this.lastFrameTime = null;
+    this.accumulatorSec = 0;
     this.gameLoop();
   }
 
@@ -666,24 +671,44 @@ export class Game {
   private gameLoop(timestamp: number = performance.now()): void {
     if (!this.gameState.isRunning) return;
 
-    let dtSec = 1 / 60;
+    let frameSec = 0;
     if (this.lastFrameTime !== null) {
       const deltaMs = timestamp - this.lastFrameTime;
-      dtSec = Math.min(0.1, deltaMs / 1000);
+      frameSec = Math.min(this.maxFrameSec, Math.max(0, deltaMs / 1000));
     }
     this.lastFrameTime = timestamp;
 
-    this.update(dtSec);
+    if (this.shouldStepSimulation()) {
+      this.accumulatorSec += frameSec;
+      while (this.accumulatorSec >= this.fixedStepSec) {
+        this.update();
+        this.accumulatorSec -= this.fixedStepSec;
+        if (!this.shouldStepSimulation()) {
+          this.accumulatorSec = 0;
+          break;
+        }
+      }
+    } else {
+      this.accumulatorSec = 0;
+    }
+
     this.render();
 
     this.animationFrameId = requestAnimationFrame((t) => this.gameLoop(t));
   }
 
-  private update(dtSec: number): void {
-    this.coreState = stepGame(this.coreState, this.pendingInput, dtSec, this.coreConfig);
-    this.pendingInput = { intent: 'none', justPressed: false };
+  private update(): void {
+    const nextIntent = this.pendingInputs.shift();
+    const input: GameInput = nextIntent
+      ? { intent: nextIntent, justPressed: true }
+      : { intent: 'none', justPressed: false };
+
+    this.coreState = stepGameFixed(this.coreState, input, this.fixedStepSec, 1, this.coreConfig);
     this.syncLegacyViewState();
-    this.trees = this.trees.filter(tree => !tree.isOffScreen(this.worldOffset));
+  }
+
+  private shouldStepSimulation(): boolean {
+    return !this.isMenuPaused && !this.coreState.runComplete && !this.coreState.crashed;
   }
 
   private syncLegacyViewState(): void {
@@ -699,6 +724,7 @@ export class Game {
     this.skier.position.y = this.coreState.player.y;
     this.abominableSnowman.position.x = this.coreState.snowman.x;
     this.abominableSnowman.worldY = this.coreState.snowman.worldY;
+    this.trees = this.buildTreesFromObstacles(this.coreState.obstacles);
   }
 
   private render(): void {
@@ -868,4 +894,23 @@ export class Game {
     this.ctx.restore();
   }
 
+}
+
+function createBrowserRngFromSeed(): () => number {
+  const params = new URLSearchParams(window.location.search);
+  const seedParam = params.get('seed');
+  if (seedParam === null) return Math.random;
+
+  const seed = Number(seedParam);
+  if (!Number.isInteger(seed) || seed < 0 || seed > 2_147_483_647) {
+    return Math.random;
+  }
+
+  let t = seed >>> 0;
+  return function seededRandom(): number {
+    t += 0x6D2B79F5;
+    let x = Math.imul(t ^ (t >>> 15), 1 | t);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
 }

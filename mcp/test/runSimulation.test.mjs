@@ -9,7 +9,7 @@ const knownCases = [
     expected: {
       seed: 1,
       seconds: 10,
-      totalDistance: 207,
+      totalDistance: 335,
       crashCount: 1,
       finalScrollSpeed: 0,
       snowmanDistance: 220,
@@ -21,7 +21,7 @@ const knownCases = [
     expected: {
       seed: 42,
       seconds: 40,
-      totalDistance: 613,
+      totalDistance: 398,
       crashCount: 1,
       finalScrollSpeed: 0,
       snowmanDistance: 220,
@@ -33,7 +33,7 @@ const knownCases = [
     expected: {
       seed: 123456,
       seconds: 60,
-      totalDistance: 336,
+      totalDistance: 674,
       crashCount: 1,
       finalScrollSpeed: 0,
       snowmanDistance: 220,

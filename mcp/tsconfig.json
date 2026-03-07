@@ -10,5 +10,5 @@
       "skipLibCheck": true,
       "noEmitOnError": true
     },
-    "include": ["src/**/*.ts", "../src/core/**/*.ts"]
+    "include": ["src/**/*.ts", "../src/core/**/*.ts", "../src/course.ts", "../src/inputPolicy.ts"]
   }
