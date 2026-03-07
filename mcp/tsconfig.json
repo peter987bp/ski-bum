@@ -11,6 +11,8 @@
   },
   "include": [
     "src/**/*.ts",
+    "../src/core/config.ts",
+    "../src/core/runtimeAdapters.ts",
     "../src/core/stepGame.ts",
     "../src/core/types.ts",
     "../src/constants.ts",

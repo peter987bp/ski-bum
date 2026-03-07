@@ -3,11 +3,12 @@ import { GameState } from './types';
 import { Tree } from './tree';
 import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
-import { BASE_SCROLL_SPEED } from './constants';
-import { createInitialGameState, stepGame } from './core/stepGame';
+import { createInitialGameState, setGameRunning } from './core/stepGame';
+import { GAME_CONFIG, MAX_SCROLL_SPEED_INCREASE } from './core/config.js';
+import { stepBrowserFrame } from './core/runtimeAdapters.js';
 import { CoreGameState, CoreTree, StepCommand } from './core/types';
-const SPAWN_GAP = 220; // world units behind the player at spawn
-const MAX_SPEED_INCREASE_FACTOR = 0.35;
+const LEGACY_TREE_SIZE_VARIATION_MIN = 0.8;
+const LEGACY_TREE_SIZE_VARIATION_RANGE = 0.4;
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -18,10 +19,10 @@ export class Game {
   private coreState!: CoreGameState;
   private animationFrameId: number | null = null;
   private worldOffset: number = 0; // How far we've scrolled
-  private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (ramped)
-  private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (can be boosted)
-  private readonly startingScrollSpeed: number = BASE_SCROLL_SPEED;
-  private readonly maxScrollSpeedIncrease: number = BASE_SCROLL_SPEED * MAX_SPEED_INCREASE_FACTOR;
+  private baseScrollSpeed: number = GAME_CONFIG.baseScrollSpeed; // Base auto-scroll speed (ramped)
+  private currentScrollSpeed: number = GAME_CONFIG.baseScrollSpeed; // Current scroll speed (can be boosted)
+  private readonly startingScrollSpeed: number = GAME_CONFIG.baseScrollSpeed;
+  private readonly maxScrollSpeedIncrease: number = MAX_SCROLL_SPEED_INCREASE;
   private isSpeedBoosted: boolean = false; // Track if speed is boosted
   private trees: Tree[] = []; // Array of trees
   private courseGenerator: CourseGenerator; // Course generator
@@ -44,6 +45,7 @@ export class Game {
   private pendingDensityMultiplier: number | null = null;
   private regenAnimationFrameId: number | null = null;
   private pendingStepCommands: StepCommand[] = [];
+  private shouldResumeAfterMenu: boolean = false;
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -59,8 +61,8 @@ export class Game {
     this.ctx = ctx;
 
     // Set canvas size
-    this.canvas.width = 800;
-    this.canvas.height = 600;
+    this.canvas.width = GAME_CONFIG.canvasWidth;
+    this.canvas.height = GAME_CONFIG.canvasHeight;
 
     // Initialize game state
     this.gameState = {
@@ -68,7 +70,7 @@ export class Game {
       score: 0,
       level: 1,
       distanceTraveled: 0,
-      targetDistance: 5000, // Target distance in pixels (can be adjusted)
+      targetDistance: GAME_CONFIG.defaultTargetDistance,
       runComplete: false,
       crashed: false
     };
@@ -82,7 +84,7 @@ export class Game {
     // Abominable snowman starts behind the skier in world space
     this.abominableSnowman = new AbominableSnowman(
       this.canvas.width / 2,
-      this.worldOffset - SPAWN_GAP
+      this.worldOffset - GAME_CONFIG.spawnGap
     );
 
     // Initialize course generator
@@ -93,8 +95,7 @@ export class Game {
       this.loadCourse();
     }
 
-    this.coreState = this.createCoreState(this.toCoreTrees(this.trees), this.gameState.targetDistance);
-    this.syncRuntimeFromCoreState();
+    this.initializeCoreSession(this.trees, this.gameState.targetDistance);
     
     // Load tree image
     this.loadTreeImage();
@@ -395,14 +396,8 @@ export class Game {
     this.menuOverlay.style.display = 'none';
     this.menuOverlay.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
     console.log('Menu closed - display set to: none');
-    
-    // Resume game
-    if ((this as any).pausedScrollSpeed !== undefined) {
-      this.currentScrollSpeed = (this as any).pausedScrollSpeed;
-      this.coreState.currentScrollSpeed = this.currentScrollSpeed;
-      (this as any).pausedScrollSpeed = 0;
-      console.log('Game resumed, scroll speed:', this.currentScrollSpeed);
-    }
+
+    this.resumeFromMenu();
     
     // Verify the change
     const newDisplay = window.getComputedStyle(this.menuOverlay).display;
@@ -434,13 +429,7 @@ export class Game {
       this.menuOverlay.style.display = 'flex';
       this.menuOverlay.style.pointerEvents = 'auto'; // Allow clicks when visible
       console.log('Opening menu - display set to: flex');
-      // Opening menu - pause game
-      if (this.currentScrollSpeed > 0) {
-        (this as any).pausedScrollSpeed = this.currentScrollSpeed;
-        this.currentScrollSpeed = 0;
-        this.coreState.currentScrollSpeed = 0;
-        console.log('Game paused, scroll speed:', this.currentScrollSpeed);
-      }
+      this.pauseForMenu();
     }
     
     // Verify the change
@@ -450,45 +439,15 @@ export class Game {
   }
 
   private retry(): void {
-    // Stop current game loop
     this.stop();
-
-    // Reset game state
-    this.gameState = {
-      isRunning: false,
-      score: 0,
-      level: 1,
-      distanceTraveled: 0,
-      targetDistance: 5000,
-      runComplete: false,
-      crashed: false
-    };
-
-    // Reset world
-    this.worldOffset = 0;
-    this.baseScrollSpeed = this.startingScrollSpeed;
-    this.currentScrollSpeed = this.baseScrollSpeed;
-    this.isSpeedBoosted = false;
     this.pendingStepCommands = [];
+    this.shouldResumeAfterMenu = false;
 
-    // Reset skier position
-    this.skier = new Skier(
-      this.canvas.width / 2,
-      this.canvas.height / 3
-    );
-
-    // Reset abominable snowman
-    this.abominableSnowman.position.x = this.canvas.width / 2;
-    this.abominableSnowman.reset(this.worldOffset, SPAWN_GAP);
-
-    // Reload course
-    this.trees = [];
     if (this.useCourseSystem) {
       this.loadCourse();
     }
 
-    this.coreState = this.createCoreState(this.toCoreTrees(this.trees), this.gameState.targetDistance);
-    this.syncRuntimeFromCoreState();
+    this.initializeCoreSession(this.trees, this.gameState.targetDistance);
 
     // Hide retry button
     if (this.retryButton) {
@@ -535,10 +494,7 @@ export class Game {
     
     // Update target distance to match course length
     this.gameState.targetDistance = this.currentCourse.totalLength;
-    if (this.coreState) {
-      this.coreState.targetDistance = this.gameState.targetDistance;
-      this.coreState.trees = this.toCoreTrees(this.trees);
-    }
+    if (this.coreState) this.applyCourseToCore(this.trees, this.gameState.targetDistance);
   }
 
   private buildTreesFromObjects(objects: CourseObject[]): Tree[] {
@@ -546,7 +502,9 @@ export class Game {
 
     objects.forEach(obj => {
       if (obj.type === 'tree') {
-        const sizeVariation = 0.8 + Math.random() * 0.4;
+        // Browser-only visual variation; not part of shared core stepping determinism.
+        const sizeVariation =
+          LEGACY_TREE_SIZE_VARIATION_MIN + Math.random() * LEGACY_TREE_SIZE_VARIATION_RANGE;
         const width = obj.width || (40 * sizeVariation);
         const height = obj.height || (60 * sizeVariation);
         const tree = new Tree(obj.x, obj.y, width, height);
@@ -574,8 +532,7 @@ export class Game {
     this.trees = [...keptTrees, ...aheadTrees];
     this.currentCourse = newCourse;
     this.gameState.targetDistance = newCourse.totalLength;
-    this.coreState.targetDistance = this.gameState.targetDistance;
-    this.coreState.trees = this.toCoreTrees(this.trees);
+    this.applyCourseToCore(this.trees, this.gameState.targetDistance);
   }
 
 
@@ -605,15 +562,13 @@ export class Game {
 
   start(): void {
     if (this.gameState.isRunning) return;
-    this.coreState.isRunning = true;
-    this.gameState.isRunning = true;
+    this.setRunning(true);
     this.lastFrameTime = null;
     this.gameLoop();
   }
 
   stop(): void {
-    this.coreState.isRunning = false;
-    this.gameState.isRunning = false;
+    this.setRunning(false);
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -639,7 +594,7 @@ export class Game {
   private update(dt: number): void {
     const commands = this.pendingStepCommands;
     this.pendingStepCommands = [];
-    this.coreState = stepGame(this.coreState, { commands }, dt);
+    this.coreState = stepBrowserFrame(this.coreState, commands, dt);
     this.syncRuntimeFromCoreState();
   }
 
@@ -816,10 +771,41 @@ export class Game {
       canvasHeight: this.canvas.height,
       targetDistance,
       trees,
-      spawnGap: SPAWN_GAP,
+      spawnGap: GAME_CONFIG.spawnGap,
       startingScrollSpeed: this.startingScrollSpeed,
       maxScrollSpeedIncrease: this.maxScrollSpeedIncrease
     });
+  }
+
+  private initializeCoreSession(trees: Tree[], targetDistance: number): void {
+    this.coreState = this.createCoreState(this.toCoreTrees(trees), targetDistance);
+    this.syncRuntimeFromCoreState();
+  }
+
+  private applyCourseToCore(trees: Tree[], targetDistance: number): void {
+    this.coreState = {
+      ...this.coreState,
+      targetDistance,
+      trees: this.toCoreTrees(trees)
+    };
+    this.syncRuntimeFromCoreState();
+  }
+
+  private setRunning(isRunning: boolean): void {
+    this.coreState = setGameRunning(this.coreState, isRunning);
+    this.syncRuntimeFromCoreState();
+  }
+
+  private pauseForMenu(): void {
+    this.shouldResumeAfterMenu = this.gameState.isRunning;
+    if (this.shouldResumeAfterMenu) this.stop();
+  }
+
+  private resumeFromMenu(): void {
+    if (this.shouldResumeAfterMenu && !this.gameState.crashed && !this.gameState.runComplete) {
+      this.start();
+    }
+    this.shouldResumeAfterMenu = false;
   }
 
   private toCoreTrees(trees: Tree[]): CoreTree[] {
@@ -845,14 +831,8 @@ export class Game {
     this.gameState.runComplete = this.coreState.runComplete;
     this.gameState.crashed = this.coreState.crashed;
 
-    this.skier.position.x = this.coreState.skier.x;
-    this.skier.position.y = this.coreState.skier.y;
-    this.skier.velocity.vx = this.coreState.skier.vx;
-    this.skier.velocity.vy = this.coreState.skier.vy;
-    this.skier.direction = this.coreState.skier.direction;
-
-    this.abominableSnowman.position.x = this.coreState.snowman.x;
-    this.abominableSnowman.worldY = this.coreState.snowman.worldY;
+    this.skier.syncFromCore(this.coreState.skier);
+    this.abominableSnowman.syncFromCore(this.coreState.snowman);
 
     this.trees = this.coreState.trees.map(
       (tree) => new Tree(tree.x, tree.y, tree.width, tree.height)

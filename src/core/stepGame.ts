@@ -1,4 +1,4 @@
-import { BASE_SCROLL_SPEED } from '../constants.js';
+import { CORE_TUNING, GAME_CONFIG } from './config.js';
 import {
   CoreGameState,
   CreateInitialGameStateOptions,
@@ -6,22 +6,9 @@ import {
   StepGameInput
 } from './types.js';
 
-const CONSECUTIVE_PRESS_WINDOW_MS = 300;
-const SKIER_SPEED = 1.7;
-const SKIER_TURN_SPEED = 2.55;
-const SKIER_AGGRESSIVE_TURN_SPEED = 5.1;
-const TREE_OFFSCREEN_BUFFER = 100;
-
-const CLOSE_RANGE_DISTANCE = 160;
-const MIN_CATCHUP = 0.6;
-const MAX_CATCHUP = 4.0;
-const CATCH_THRESHOLD = 18;
-const CHASE_RAMP_START = 0.62;
-const CHASE_RAMP_END = 0.8;
-
 export function createInitialGameState(options: CreateInitialGameStateOptions): CoreGameState {
   const initialWorldOffset = options.initialWorldOffset ?? 0;
-  const spawnGap = options.spawnGap ?? 220;
+  const spawnGap = options.spawnGap ?? GAME_CONFIG.spawnGap;
 
   return {
     isRunning: false,
@@ -48,7 +35,7 @@ export function createInitialGameState(options: CreateInitialGameStateOptions): 
       width: 30,
       height: 30,
       vx: 0,
-      vy: SKIER_SPEED,
+      vy: CORE_TUNING.skierSpeed,
       direction: 'down',
       wasDownLastPress: false,
       lastDownPressTime: 0,
@@ -60,8 +47,8 @@ export function createInitialGameState(options: CreateInitialGameStateOptions): 
     snowman: {
       x: options.canvasWidth / 2,
       worldY: initialWorldOffset - spawnGap,
-      size: 25,
-      xSpeed: 1.15
+      size: CORE_TUNING.snowmanSize,
+      xSpeed: CORE_TUNING.snowmanXSpeed
     }
   };
 }
@@ -132,7 +119,9 @@ export function stepGame(
     return next;
   }
 
-  next.trees = next.trees.filter((tree) => tree.y >= next.worldOffset - TREE_OFFSCREEN_BUFFER);
+  next.trees = next.trees.filter(
+    (tree) => tree.y >= next.worldOffset - CORE_TUNING.treeOffscreenBuffer
+  );
 
   if (next.distanceTraveled >= next.targetDistance) {
     next.runComplete = true;
@@ -147,6 +136,10 @@ export function getDistanceProgress(state: CoreGameState): number {
   return Math.min(1, Math.max(0, state.distanceTraveled / state.targetDistance));
 }
 
+export function setGameRunning(state: CoreGameState, isRunning: boolean): CoreGameState {
+  return { ...state, isRunning };
+}
+
 function applyDirectionCommand(state: CoreGameState, command: StepCommand): void {
   const atMs = Number.isFinite(command.atMs) ? command.atMs : 0;
   const skier = state.skier;
@@ -154,7 +147,7 @@ function applyDirectionCommand(state: CoreGameState, command: StepCommand): void
   switch (command.direction) {
     case 'down': {
       const boostConsecutive = state.isSpeedBoosted &&
-        (atMs - state.lastBoostPressTime) < CONSECUTIVE_PRESS_WINDOW_MS;
+        (atMs - state.lastBoostPressTime) < CORE_TUNING.consecutivePressWindowMs;
       state.currentScrollSpeed = boostConsecutive
         ? state.baseScrollSpeed * 2
         : state.baseScrollSpeed;
@@ -162,36 +155,40 @@ function applyDirectionCommand(state: CoreGameState, command: StepCommand): void
       state.lastBoostPressTime = atMs;
 
       const isConsecutiveDown = skier.wasDownLastPress &&
-        (atMs - skier.lastDownPressTime) < CONSECUTIVE_PRESS_WINDOW_MS;
+        (atMs - skier.lastDownPressTime) < CORE_TUNING.consecutivePressWindowMs;
       skier.wasDownLastPress = true;
       skier.lastDownPressTime = atMs;
       skier.direction = 'down';
       skier.vx = 0;
-      skier.vy = isConsecutiveDown ? SKIER_SPEED * 2 : SKIER_SPEED;
+      skier.vy = isConsecutiveDown ? CORE_TUNING.skierSpeed * 2 : CORE_TUNING.skierSpeed;
       return;
     }
     case 'left': {
       const isAggressive = skier.wasLeftLastPress &&
-        (atMs - skier.lastLeftPressTime) < CONSECUTIVE_PRESS_WINDOW_MS;
+        (atMs - skier.lastLeftPressTime) < CORE_TUNING.consecutivePressWindowMs;
       skier.wasLeftLastPress = true;
       skier.lastLeftPressTime = atMs;
       skier.wasDownLastPress = false;
       skier.wasRightLastPress = false;
       skier.direction = 'left';
-      skier.vx = -(isAggressive ? SKIER_AGGRESSIVE_TURN_SPEED : SKIER_TURN_SPEED);
-      skier.vy = SKIER_SPEED * 0.5;
+      skier.vx = -(isAggressive
+        ? CORE_TUNING.skierAggressiveTurnSpeed
+        : CORE_TUNING.skierTurnSpeed);
+      skier.vy = CORE_TUNING.skierSpeed * 0.5;
       return;
     }
     case 'right': {
       const isAggressive = skier.wasRightLastPress &&
-        (atMs - skier.lastRightPressTime) < CONSECUTIVE_PRESS_WINDOW_MS;
+        (atMs - skier.lastRightPressTime) < CORE_TUNING.consecutivePressWindowMs;
       skier.wasRightLastPress = true;
       skier.lastRightPressTime = atMs;
       skier.wasDownLastPress = false;
       skier.wasLeftLastPress = false;
       skier.direction = 'right';
-      skier.vx = isAggressive ? SKIER_AGGRESSIVE_TURN_SPEED : SKIER_TURN_SPEED;
-      skier.vy = SKIER_SPEED * 0.5;
+      skier.vx = isAggressive
+        ? CORE_TUNING.skierAggressiveTurnSpeed
+        : CORE_TUNING.skierTurnSpeed;
+      skier.vy = CORE_TUNING.skierSpeed * 0.5;
       return;
     }
     case 'up': {
@@ -253,19 +250,26 @@ function updateSnowman(
 
   const safeScrollSpeed = Math.max(0, playerScrollSpeed);
   const gap = playerWorldY - snowman.worldY;
-  if (gap <= CATCH_THRESHOLD) return true;
+  if (gap <= CORE_TUNING.catchThreshold) return true;
 
-  const gapFactor = clamp01(1 - gap / CLOSE_RANGE_DISTANCE);
-  const slowFactor = clamp01(1 - safeScrollSpeed / BASE_SCROLL_SPEED);
-  const fastFactor = clamp01(safeScrollSpeed / BASE_SCROLL_SPEED);
-  const chaseRamp = clamp01((courseProgress - CHASE_RAMP_START) / (CHASE_RAMP_END - CHASE_RAMP_START));
+  const gapFactor = clamp01(1 - gap / CORE_TUNING.closeRangeDistance);
+  const slowFactor = clamp01(1 - safeScrollSpeed / GAME_CONFIG.baseScrollSpeed);
+  const fastFactor = clamp01(safeScrollSpeed / GAME_CONFIG.baseScrollSpeed);
+  const chaseRamp = clamp01(
+    (courseProgress - CORE_TUNING.chaseRampStart) /
+    (CORE_TUNING.chaseRampEnd - CORE_TUNING.chaseRampStart)
+  );
   const catchupStrength = lerp(0, 1, chaseRamp);
-  const catchup = lerp(MIN_CATCHUP, MAX_CATCHUP, clamp01(0.65 * gapFactor + 0.35 * slowFactor));
+  const catchup = lerp(
+    CORE_TUNING.minCatchup,
+    CORE_TUNING.maxCatchup,
+    clamp01(0.65 * gapFactor + 0.35 * slowFactor)
+  );
   const chaseSpeed = Math.max(0, safeScrollSpeed + catchup * catchupStrength * (1 - 0.35 * fastFactor));
 
   snowman.worldY += chaseSpeed * dt;
 
-  return (playerWorldY - snowman.worldY) <= CATCH_THRESHOLD;
+  return (playerWorldY - snowman.worldY) <= CORE_TUNING.catchThreshold;
 }
 
 function clamp01(value: number): number {

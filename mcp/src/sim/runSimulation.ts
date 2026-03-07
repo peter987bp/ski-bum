@@ -1,4 +1,6 @@
-import { createInitialGameState, stepGame } from '../../../src/core/stepGame.js';
+import { createInitialGameState, setGameRunning } from '../../../src/core/stepGame.js';
+import { GAME_CONFIG, MAX_SCROLL_SPEED_INCREASE, SIMULATION_CONFIG } from '../../../src/core/config.js';
+import { stepSimulationTick } from '../../../src/core/runtimeAdapters.js';
 import { CoreGameState, CoreTree, StepCommand } from '../../../src/core/types.js';
 
 type SimulationInput = {
@@ -15,9 +17,6 @@ export type SimulationMetrics = {
   snowmanDistance: number;
 };
 
-const FIXED_DT_FRAMES = 1;
-const FIXED_FPS = 60;
-
 // Small deterministic PRNG (Mulberry32)
 function mulberry32(seed: number) {
   let t = seed >>> 0;
@@ -33,23 +32,33 @@ function buildSimulationTrees(seed: number, targetDistance: number, canvasWidth:
   const rand = mulberry32(seed);
   const trees: CoreTree[] = [];
 
-  for (let y = 140; y <= targetDistance + 220; y += 75) {
-    const leftBase = canvasWidth * (0.13 + rand() * 0.12);
-    const rightBase = canvasWidth * (0.75 + rand() * 0.12);
-    const variance = (rand() - 0.5) * 24;
+  for (
+    let y = SIMULATION_CONFIG.treeStartY;
+    y <= targetDistance + SIMULATION_CONFIG.treeEndBuffer;
+    y += SIMULATION_CONFIG.treeStepY
+  ) {
+    const leftBase = canvasWidth * (SIMULATION_CONFIG.leftTreeBaseStart + rand() * SIMULATION_CONFIG.treeBaseRange);
+    const rightBase = canvasWidth * (SIMULATION_CONFIG.rightTreeBaseStart + rand() * SIMULATION_CONFIG.treeBaseRange);
+    const variance = (rand() - 0.5) * SIMULATION_CONFIG.treeVariance;
 
     trees.push({
-      x: Math.max(20, Math.min(canvasWidth - 20, leftBase + variance)),
+      x: Math.max(
+        SIMULATION_CONFIG.treeMinXPadding,
+        Math.min(canvasWidth - SIMULATION_CONFIG.treeMinXPadding, leftBase + variance)
+      ),
       y,
-      width: 34 + rand() * 12,
-      height: 52 + rand() * 20
+      width: SIMULATION_CONFIG.treeWidthBase + rand() * SIMULATION_CONFIG.treeWidthRange,
+      height: SIMULATION_CONFIG.treeHeightBase + rand() * SIMULATION_CONFIG.treeHeightRange
     });
 
     trees.push({
-      x: Math.max(20, Math.min(canvasWidth - 20, rightBase - variance)),
-      y: y + 14,
-      width: 34 + rand() * 12,
-      height: 52 + rand() * 20
+      x: Math.max(
+        SIMULATION_CONFIG.treeMinXPadding,
+        Math.min(canvasWidth - SIMULATION_CONFIG.treeMinXPadding, rightBase - variance)
+      ),
+      y: y + SIMULATION_CONFIG.rightTreeYOffset,
+      width: SIMULATION_CONFIG.treeWidthBase + rand() * SIMULATION_CONFIG.treeWidthRange,
+      height: SIMULATION_CONFIG.treeHeightBase + rand() * SIMULATION_CONFIG.treeHeightRange
     });
   }
 
@@ -57,22 +66,21 @@ function buildSimulationTrees(seed: number, targetDistance: number, canvasWidth:
 }
 
 export function initSimulation(seed: number): CoreGameState {
-  const trees = buildSimulationTrees(seed, 5000, 800);
+  const trees = buildSimulationTrees(seed, GAME_CONFIG.defaultTargetDistance, GAME_CONFIG.canvasWidth);
   const state = createInitialGameState({
-    canvasWidth: 800,
-    canvasHeight: 600,
-    targetDistance: 5000,
+    canvasWidth: GAME_CONFIG.canvasWidth,
+    canvasHeight: GAME_CONFIG.canvasHeight,
+    targetDistance: GAME_CONFIG.defaultTargetDistance,
     trees,
-    startingScrollSpeed: 1.45,
-    maxScrollSpeedIncrease: 1.45 * 0.35
+    startingScrollSpeed: GAME_CONFIG.baseScrollSpeed,
+    maxScrollSpeedIncrease: MAX_SCROLL_SPEED_INCREASE
   });
 
-  state.isRunning = true;
-  return state;
+  return setGameRunning(state, true);
 }
 
 export function simulationCommandsForStep(step: number): StepCommand[] {
-  const atMs = (step * 1000) / FIXED_FPS;
+  const atMs = (step * 1000) / SIMULATION_CONFIG.fixedFps;
   const cycle = step % 180;
 
   if (step === 0) return [{ direction: 'down', atMs }];
@@ -84,12 +92,17 @@ export function simulationCommandsForStep(step: number): StepCommand[] {
 }
 
 export function stepSimulation(state: CoreGameState, step: number): CoreGameState {
-  return stepGame(state, { commands: simulationCommandsForStep(step) }, FIXED_DT_FRAMES);
+  return stepSimulationTick(
+    state,
+    step,
+    simulationCommandsForStep,
+    SIMULATION_CONFIG.fixedDtFrames
+  );
 }
 
 export function runSimulation(input: SimulationInput): SimulationMetrics {
   const seconds = Math.max(1, Math.min(300, Math.floor(input.seconds)));
-  const steps = seconds * FIXED_FPS;
+  const steps = seconds * SIMULATION_CONFIG.fixedFps;
 
   let state = initSimulation(input.seed);
 
