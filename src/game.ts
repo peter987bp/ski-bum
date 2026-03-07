@@ -4,8 +4,16 @@ import { Tree } from './tree';
 import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
 import { BASE_SCROLL_SPEED } from './constants';
+import {
+  CoreObstacle,
+  GameCoreConfig,
+  GameCoreState,
+  GameInput,
+  createDefaultGameCoreConfig,
+  createInitialGameState,
+  stepGame,
+} from './core/gameCore';
 const SPAWN_GAP = 220; // world units behind the player at spawn
-const MAX_SPEED_INCREASE_FACTOR = 0.35;
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -18,7 +26,6 @@ export class Game {
   private baseScrollSpeed: number = BASE_SCROLL_SPEED; // Base auto-scroll speed (ramped)
   private currentScrollSpeed: number = BASE_SCROLL_SPEED; // Current scroll speed (can be boosted)
   private readonly startingScrollSpeed: number = BASE_SCROLL_SPEED;
-  private readonly maxScrollSpeedIncrease: number = BASE_SCROLL_SPEED * MAX_SPEED_INCREASE_FACTOR;
   private isSpeedBoosted: boolean = false; // Track if speed is boosted
   private trees: Tree[] = []; // Array of trees
   private courseGenerator: CourseGenerator; // Course generator
@@ -40,6 +47,10 @@ export class Game {
   private densityDebounceId: number | null = null;
   private pendingDensityMultiplier: number | null = null;
   private regenAnimationFrameId: number | null = null;
+  private coreConfig: GameCoreConfig;
+  private coreState: GameCoreState;
+  private pendingInput: GameInput = { intent: 'none', justPressed: false };
+  private obstacles: CoreObstacle[] = [];
 
   constructor(canvasId: string) {
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
@@ -75,11 +86,26 @@ export class Game {
       this.canvas.height / 3  // Upper third of screen
     );
 
+    this.coreConfig = createDefaultGameCoreConfig({
+      worldWidth: this.canvas.width,
+      playerStartX: this.skier.position.x,
+      playerScreenY: this.skier.position.y,
+      targetDistance: this.gameState.targetDistance,
+      // Preserve existing browser feel where base speed was in units/frame.
+      baseScrollSpeed: BASE_SCROLL_SPEED * 60,
+    });
+
     // Abominable snowman starts behind the skier in world space
     this.abominableSnowman = new AbominableSnowman(
       this.canvas.width / 2,
       this.worldOffset - SPAWN_GAP
     );
+
+    this.coreState = createInitialGameState({
+      config: this.coreConfig,
+      obstacles: this.obstacles,
+      worldOffset: this.worldOffset,
+    });
 
     // Initialize course generator
     this.courseGenerator = new CourseGenerator(this.canvas.width);
@@ -460,6 +486,7 @@ export class Game {
     this.baseScrollSpeed = this.startingScrollSpeed;
     this.currentScrollSpeed = this.baseScrollSpeed;
     this.isSpeedBoosted = false;
+    this.pendingInput = { intent: 'none', justPressed: false };
 
     // Reset skier position
     this.skier = new Skier(
@@ -476,6 +503,8 @@ export class Game {
     if (this.useCourseSystem) {
       this.loadCourse();
     }
+
+    this.resetCoreState(this.gameState.targetDistance, this.obstacles);
 
     // Hide retry button
     if (this.retryButton) {
@@ -517,15 +546,18 @@ export class Game {
     // Get all objects from the course
     this.courseObjects = this.courseGenerator.getAllObjects(this.currentCourse);
     
-    // Convert course objects to trees
-    this.trees = this.buildTreesFromObjects(this.courseObjects);
+    const obstacleData = this.buildObstacleDataFromObjects(this.courseObjects);
+    this.trees = obstacleData.trees;
+    this.obstacles = obstacleData.obstacles;
     
     // Update target distance to match course length
     this.gameState.targetDistance = this.currentCourse.totalLength;
+    this.resetCoreState(this.gameState.targetDistance, this.obstacles);
   }
 
-  private buildTreesFromObjects(objects: CourseObject[]): Tree[] {
+  private buildObstacleDataFromObjects(objects: CourseObject[]): { trees: Tree[]; obstacles: CoreObstacle[] } {
     const trees: Tree[] = [];
+    const obstacles: CoreObstacle[] = [];
 
     objects.forEach(obj => {
       if (obj.type === 'tree') {
@@ -534,11 +566,18 @@ export class Game {
         const height = obj.height || (60 * sizeVariation);
         const tree = new Tree(obj.x, obj.y, width, height);
         trees.push(tree);
+        obstacles.push({
+          type: 'tree',
+          x: obj.x,
+          y: obj.y,
+          width,
+          height,
+        });
       }
       // Add more object types here as needed
     });
 
-    return trees;
+    return { trees, obstacles };
   }
 
   private regenerateAheadCourse(multiplier: number): void {
@@ -551,12 +590,33 @@ export class Game {
     const newCourse = this.courseGenerator.createSimpleCourse(multiplier);
     const newCourseObjects = this.courseGenerator.getAllObjects(newCourse);
     const aheadObjects = newCourseObjects.filter(obj => obj.y > cutoffWorldY);
-    const aheadTrees = this.buildTreesFromObjects(aheadObjects);
+    const aheadData = this.buildObstacleDataFromObjects(aheadObjects);
 
     this.courseObjects = [...keptObjects, ...aheadObjects];
-    this.trees = [...keptTrees, ...aheadTrees];
+    this.trees = [...keptTrees, ...aheadData.trees];
+    this.obstacles = this.trees.map((tree) => ({
+      type: 'tree',
+      x: tree.position.x,
+      y: tree.position.y,
+      width: tree.width,
+      height: tree.height,
+    }));
     this.currentCourse = newCourse;
     this.gameState.targetDistance = newCourse.totalLength;
+    this.resetCoreState(this.gameState.targetDistance, this.obstacles);
+  }
+
+  private resetCoreState(targetDistance: number, obstacles: CoreObstacle[]): void {
+    this.coreConfig = createDefaultGameCoreConfig({
+      ...this.coreConfig,
+      targetDistance,
+    });
+    this.coreState = createInitialGameState({
+      config: this.coreConfig,
+      obstacles,
+      worldOffset: this.worldOffset,
+    });
+    this.syncLegacyViewState();
   }
 
 
@@ -564,17 +624,16 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       switch (e.key) {
         case 'ArrowLeft':
-          this.skier.setDirection('left');
+          this.queueInput('left');
           break;
         case 'ArrowRight':
-          this.skier.setDirection('right');
+          this.queueInput('right');
           break;
         case 'ArrowDown':
-          this.handleSpeedBoost();
+          this.queueInput('down');
           break;
         case 'ArrowUp':
-          // Stop scrolling
-          this.currentScrollSpeed = 0;
+          this.queueInput('up');
           break;
         case 'h':
         case 'H':
@@ -584,33 +643,13 @@ export class Game {
     });
   }
 
-  private handleSpeedBoost(): void {
-    const now = Date.now();
-    const lastPressTime = (this as any).lastDownPressTime || 0;
-    const consecutivePressWindow = 300; // milliseconds
-    
-    // Check if this is a consecutive down press
-    const isConsecutive = this.isSpeedBoosted && 
-                         (now - lastPressTime) < consecutivePressWindow;
-    
-    if (isConsecutive) {
-      // Double press = speed boost
-      this.currentScrollSpeed = this.baseScrollSpeed * 2;
-      this.isSpeedBoosted = true;
-    } else {
-      // Single press = regular speed
-      this.currentScrollSpeed = this.baseScrollSpeed;
-      this.isSpeedBoosted = true;
-    }
-    
-    (this as any).lastDownPressTime = now;
+  private queueInput(intent: GameInput['intent']): void {
+    this.pendingInput = { intent, justPressed: true };
   }
 
   start(): void {
     if (this.gameState.isRunning) return;
-    
-    this.abominableSnowman.position.x = this.canvas.width / 2;
-    this.abominableSnowman.reset(this.worldOffset, SPAWN_GAP);
+
     this.gameState.isRunning = true;
     this.lastFrameTime = null;
     this.gameLoop();
@@ -627,126 +666,39 @@ export class Game {
   private gameLoop(timestamp: number = performance.now()): void {
     if (!this.gameState.isRunning) return;
 
-    let dt = 1;
+    let dtSec = 1 / 60;
     if (this.lastFrameTime !== null) {
       const deltaMs = timestamp - this.lastFrameTime;
-      dt = Math.min(2, deltaMs / (1000 / 60));
+      dtSec = Math.min(0.1, deltaMs / 1000);
     }
     this.lastFrameTime = timestamp;
 
-    this.update(dt);
+    this.update(dtSec);
     this.render();
 
     this.animationFrameId = requestAnimationFrame((t) => this.gameLoop(t));
   }
 
-  private update(dt: number): void {
-    // Don't update game logic when complete or crashed, but still allow UI interactions
-    if (this.gameState.runComplete || this.gameState.crashed) {
-      // Stop scrolling when complete or crashed
-      this.currentScrollSpeed = 0;
-      return;
-    }
-
-    const distanceProgress = this.getDistanceProgress();
-    this.updateScrollSpeedRamp(distanceProgress);
-
-    // World scrolls automatically (unless stopped)
-    if (this.currentScrollSpeed > 0) {
-      this.worldOffset += this.currentScrollSpeed * dt;
-      this.gameState.distanceTraveled = this.worldOffset;
-    }
-
-    // Update skier (only horizontal movement)
-    // Only update X position, keep Y fixed
-    const fixedY = this.skier.position.y;
-    this.skier.update();
-    this.skier.position.y = fixedY; // Lock Y position
-
-    // Update abominable snowman (chase skier)
-    const snowmanCaught = this.abominableSnowman.update(
-      this.skier.position.x,
-      this.worldOffset,
-      this.currentScrollSpeed,
-      dt,
-      distanceProgress
-    );
-    if (snowmanCaught) {
-      this.gameState.crashed = true;
-      this.currentScrollSpeed = 0;
-      return;
-    }
-
-    // Check for collisions with trees
-    this.checkCollisions();
-
-    // Course system: All objects are pre-loaded, no need to spawn during gameplay
-    // The course is already fully generated when the game starts
-
-    // Remove trees that are off screen
-    this.trees = this.trees.filter(tree => {
-      return !tree.isOffScreen(this.worldOffset);
-    });
-
-    // Check if run is complete
-    if (this.gameState.distanceTraveled >= this.gameState.targetDistance) {
-      this.gameState.runComplete = true;
-      this.gameState.distanceTraveled = this.gameState.targetDistance; // Cap at target
-    }
-
-    // Keep skier within horizontal bounds only
-    if (this.skier.position.x < 0) this.skier.position.x = 0;
-    if (this.skier.position.x > this.canvas.width) this.skier.position.x = this.canvas.width;
+  private update(dtSec: number): void {
+    this.coreState = stepGame(this.coreState, this.pendingInput, dtSec, this.coreConfig);
+    this.pendingInput = { intent: 'none', justPressed: false };
+    this.syncLegacyViewState();
+    this.trees = this.trees.filter(tree => !tree.isOffScreen(this.worldOffset));
   }
 
-  private updateScrollSpeedRamp(distanceProgress: number): void {
-    const previousBaseSpeed = this.baseScrollSpeed;
-
-    this.baseScrollSpeed = this.startingScrollSpeed +
-      (distanceProgress * this.maxScrollSpeedIncrease);
-
-    if (this.currentScrollSpeed > 0) {
-      const speedMultiplier = previousBaseSpeed > 0
-        ? this.currentScrollSpeed / previousBaseSpeed
-        : 1;
-      this.currentScrollSpeed = this.baseScrollSpeed * speedMultiplier;
-    }
-  }
-
-  private getDistanceProgress(): number {
-    if (this.gameState.targetDistance <= 0) return 0;
-    return Math.min(1, Math.max(0, this.gameState.distanceTraveled / this.gameState.targetDistance));
-  }
-
-  private checkCollisions(): void {
-    const skierX = this.skier.position.x;
-    const skierY = this.skier.position.y;
-    
-    // Skier bounding box (skier is drawn centered at its position)
-    const skierLeft = skierX - this.skier.width / 2;
-    const skierRight = skierX + this.skier.width / 2;
-    const skierTop = skierY - this.skier.height / 2;
-    const skierBottom = skierY + this.skier.height / 2;
-
-    // Check collision with each tree
-    for (const tree of this.trees) {
-      // Calculate tree's screen position (accounting for camera scroll)
-      const treeScreenY = tree.position.y - this.worldOffset;
-      
-      // Tree bounding box (trees are drawn upward from their Y position)
-      const treeLeft = tree.position.x - tree.width / 2;
-      const treeRight = tree.position.x + tree.width / 2;
-      const treeTop = treeScreenY - tree.height;
-      const treeBottom = treeScreenY;
-
-      // Check if skier rectangle intersects with tree rectangle
-      if (skierLeft < treeRight && skierRight > treeLeft &&
-          skierTop < treeBottom && skierBottom > treeTop) {
-        this.gameState.crashed = true;
-        this.currentScrollSpeed = 0;
-        return;
-      }
-    }
+  private syncLegacyViewState(): void {
+    this.worldOffset = this.coreState.worldOffset;
+    this.baseScrollSpeed = this.coreState.scroll.baseSpeed;
+    this.currentScrollSpeed = this.coreState.scroll.currentSpeed;
+    this.isSpeedBoosted = this.coreState.scroll.isBoosted;
+    this.gameState.distanceTraveled = this.coreState.distanceTraveled;
+    this.gameState.targetDistance = this.coreState.targetDistance;
+    this.gameState.runComplete = this.coreState.runComplete;
+    this.gameState.crashed = this.coreState.crashed;
+    this.skier.position.x = this.coreState.player.x;
+    this.skier.position.y = this.coreState.player.y;
+    this.abominableSnowman.position.x = this.coreState.snowman.x;
+    this.abominableSnowman.worldY = this.coreState.snowman.worldY;
   }
 
   private render(): void {
