@@ -459,6 +459,7 @@ export class Game {
     this.worldOffset = 0;
     this.baseScrollSpeed = this.startingScrollSpeed;
     this.currentScrollSpeed = this.baseScrollSpeed;
+    this.speedMultiplier = 1;
     this.isSpeedBoosted = false;
 
     // Reset skier position
@@ -590,17 +591,18 @@ export class Game {
     const consecutivePressWindow = 300; // milliseconds
     
     // Check if this is a consecutive down press
-    const isConsecutive = this.isSpeedBoosted && 
-                         (now - lastPressTime) < consecutivePressWindow;
+    const isConsecutive = (now - lastPressTime) < consecutivePressWindow;
     
     if (isConsecutive) {
       // Double press = speed boost
-      this.currentScrollSpeed = this.baseScrollSpeed * 2;
+      this.currentScrollSpeed = this.baseScrollSpeed;
+      this.speedMultiplier = 2;
       this.isSpeedBoosted = true;
     } else {
       // Single press = regular speed
       this.currentScrollSpeed = this.baseScrollSpeed;
-      this.isSpeedBoosted = true;
+      this.speedMultiplier = 1;
+      this.isSpeedBoosted = false;
     }
     
     (this as any).lastDownPressTime = now;
