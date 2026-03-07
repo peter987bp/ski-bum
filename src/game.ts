@@ -8,14 +8,13 @@ import {
   CoreObstacle,
   GameCoreConfig,
   GameCoreState,
-  GameInput,
   GameIntent,
   createDefaultGameCoreConfig,
   createInitialGameState,
-  stepGameFixed,
 } from './core/gameCore';
 import { buildCoreObstaclesFromCourseObjects } from './core/progression';
-import { shouldQueueGameplayInput } from './inputPolicy';
+import { withMenuClosed, withMenuOpened, withQueuedGameplayInput } from './gameAdapterControls';
+import { applyGameAdapterFixedStep, createGameCourseProgression } from './gameAdapterRuntime';
 const SPAWN_GAP = 220; // world units behind the player at spawn
 
 export class Game {
@@ -115,7 +114,8 @@ export class Game {
       worldOffset: this.worldOffset,
     });
 
-    this.rng = createBrowserRngFromSeed();
+    const initialProgression = createGameCourseProgression(window.location.search, this.canvas.width, this.treeDensityMultiplier);
+    this.rng = initialProgression.rng;
     // Initialize course generator
     this.courseGenerator = new CourseGenerator(this.canvas.width, this.rng);
     
@@ -422,8 +422,14 @@ export class Game {
     // Force close the menu
     this.menuOverlay.style.display = 'none';
     this.menuOverlay.style.pointerEvents = 'none'; // Ensure it doesn't block clicks
-    this.isMenuPaused = false;
-    this.pendingInputs = [];
+    const inputState = withMenuClosed({
+      isRunning: this.gameState.isRunning,
+      isMenuPaused: this.isMenuPaused,
+      isTerminal: this.coreState.crashed || this.coreState.runComplete,
+      pendingInputs: this.pendingInputs,
+    });
+    this.isMenuPaused = inputState.isMenuPaused;
+    this.pendingInputs = inputState.pendingInputs;
     this.lastFrameTime = null;
     this.accumulatorSec = 0;
     console.log('Menu closed - display set to: none');
@@ -457,8 +463,14 @@ export class Game {
     } else {
       this.menuOverlay.style.display = 'flex';
       this.menuOverlay.style.pointerEvents = 'auto'; // Allow clicks when visible
-      this.isMenuPaused = true;
-      this.pendingInputs = [];
+      const inputState = withMenuOpened({
+        isRunning: this.gameState.isRunning,
+        isMenuPaused: this.isMenuPaused,
+        isTerminal: this.coreState.crashed || this.coreState.runComplete,
+        pendingInputs: this.pendingInputs,
+      });
+      this.isMenuPaused = inputState.isMenuPaused;
+      this.pendingInputs = inputState.pendingInputs;
       this.accumulatorSec = 0;
       console.log('Opening menu - display set to: flex');
     }
@@ -545,18 +557,14 @@ export class Game {
   }
 
   private loadCourse(): void {
-    // Create the course
-    this.currentCourse = this.courseGenerator.createSimpleCourse(this.treeDensityMultiplier);
-    
-    // Get all objects from the course
-    this.courseObjects = this.courseGenerator.getAllObjects(this.currentCourse);
-    
-    const obstacleData = this.buildObstacleDataFromObjects(this.courseObjects);
-    this.trees = obstacleData.trees;
-    this.obstacles = obstacleData.obstacles;
+    const progression = createGameCourseProgression(window.location.search, this.canvas.width, this.treeDensityMultiplier);
+    this.currentCourse = progression.course;
+    this.courseObjects = progression.courseObjects;
+    this.obstacles = progression.obstacles;
+    this.trees = this.buildTreesFromObstacles(this.obstacles);
     
     // Update target distance to match course length
-    this.gameState.targetDistance = this.currentCourse.totalLength;
+    this.gameState.targetDistance = progression.course.totalLength;
     this.initializeCoreState(this.gameState.targetDistance, this.obstacles);
   }
 
@@ -644,11 +652,13 @@ export class Game {
   }
 
   private queueInput(intent: GameIntent): void {
-    const isTerminal = this.coreState.crashed || this.coreState.runComplete;
-    if (!shouldQueueGameplayInput(this.gameState.isRunning, this.isMenuPaused, isTerminal)) {
-      return;
-    }
-    this.pendingInputs.push(intent);
+    const inputState = withQueuedGameplayInput({
+      isRunning: this.gameState.isRunning,
+      isMenuPaused: this.isMenuPaused,
+      isTerminal: this.coreState.crashed || this.coreState.runComplete,
+      pendingInputs: this.pendingInputs,
+    }, intent);
+    this.pendingInputs = inputState.pendingInputs;
   }
 
   start(): void {
@@ -698,12 +708,14 @@ export class Game {
   }
 
   private update(): void {
-    const nextIntent = this.pendingInputs.shift();
-    const input: GameInput = nextIntent
-      ? { intent: nextIntent, justPressed: true }
-      : { intent: 'none', justPressed: false };
-
-    this.coreState = stepGameFixed(this.coreState, input, this.fixedStepSec, 1, this.coreConfig);
+    const next = applyGameAdapterFixedStep(
+      this.coreState,
+      this.coreConfig,
+      this.pendingInputs,
+      this.fixedStepSec
+    );
+    this.coreState = next.coreState;
+    this.pendingInputs = next.pendingInputs;
     this.syncLegacyViewState();
   }
 
@@ -893,24 +905,4 @@ export class Game {
 
     this.ctx.restore();
   }
-
-}
-
-function createBrowserRngFromSeed(): () => number {
-  const params = new URLSearchParams(window.location.search);
-  const seedParam = params.get('seed');
-  if (seedParam === null) return Math.random;
-
-  const seed = Number(seedParam);
-  if (!Number.isInteger(seed) || seed < 0 || seed > 2_147_483_647) {
-    return Math.random;
-  }
-
-  let t = seed >>> 0;
-  return function seededRandom(): number {
-    t += 0x6D2B79F5;
-    let x = Math.imul(t ^ (t >>> 15), 1 | t);
-    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  };
 }

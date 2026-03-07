@@ -10,5 +10,5 @@
       "skipLibCheck": true,
       "noEmitOnError": true
     },
-    "include": ["src/**/*.ts", "../src/core/**/*.ts", "../src/course.ts", "../src/inputPolicy.ts"]
+    "include": ["src/**/*.ts", "../src/core/**/*.ts", "../src/course.ts", "../src/inputPolicy.ts", "../src/browserSeed.ts", "../src/gameAdapterControls.ts", "../src/gameAdapterRuntime.ts"]
   }
