@@ -1,5 +1,7 @@
 import { Position, Velocity, Direction } from './types';
 
+const LEGACY_FPS = 60;
+
 export class Skier {
   position: Position;
   velocity: Velocity;
@@ -22,9 +24,9 @@ export class Skier {
     this.position = { x, y };
     this.velocity = { vx: 0, vy: 0 };
     this.direction = 'down';
-    this.speed = 1.7; // Reduced by 15% (was 2)
-    this.turnSpeed = 2.55; // Reduced by 15% (was 3) - Gentle turn speed
-    this.aggressiveTurnSpeed = 5.1; // Reduced by 15% (was 6) - Aggressive turn speed (double press)
+    this.speed = 1.7 * LEGACY_FPS; // Reduced by 15% (was 2) - per second
+    this.turnSpeed = 2.55 * LEGACY_FPS; // Reduced by 15% (was 3) - Gentle turn speed per second
+    this.aggressiveTurnSpeed = 5.1 * LEGACY_FPS; // Reduced by 15% (was 6) - Aggressive turn speed per second
     this.wasDownLastPress = false;
     this.lastDownPressTime = 0;
     this.wasLeftLastPress = false;
@@ -33,10 +35,10 @@ export class Skier {
     this.lastRightPressTime = 0;
   }
 
-  update(): void {
+  update(dtSec: number): void {
     // Update position based on velocity
-    this.position.x += this.velocity.vx;
-    this.position.y += this.velocity.vy;
+    this.position.x += this.velocity.vx * dtSec;
+    this.position.y += this.velocity.vy * dtSec;
   }
 
   setDirection(direction: Direction): void {
@@ -144,4 +146,3 @@ export class Skier {
     }
   }
 }
-
