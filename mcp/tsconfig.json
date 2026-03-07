@@ -1,14 +1,14 @@
-{
+  {
     "compilerOptions": {
       "target": "ES2022",
       "lib": ["ES2022"],
       "module": "NodeNext",
       "moduleResolution": "NodeNext",
       "outDir": "dist",
-      "rootDir": "src",
+      "rootDir": "..",
       "strict": true,
       "skipLibCheck": true,
       "noEmitOnError": true
     },
-    "include": ["src/**/*.ts"]
+    "include": ["src/**/*.ts", "../src/core/**/*.ts", "../src/course.ts", "../src/inputPolicy.ts", "../src/browserSeed.ts", "../src/gameAdapterControls.ts", "../src/gameAdapterRuntime.ts"]
   }

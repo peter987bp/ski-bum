@@ -25,9 +25,11 @@ const EARLY_SAFE_MAX_X = 0.68;
 
 export class CourseGenerator {
   private canvasWidth: number;
+  private rng: () => number;
 
-  constructor(canvasWidth: number) {
+  constructor(canvasWidth: number, rng: () => number = Math.random) {
     this.canvasWidth = canvasWidth;
+    this.rng = rng;
   }
 
   private clampDensityMultiplier(densityMultiplier: number): number {
@@ -159,15 +161,15 @@ export class CourseGenerator {
     
     while (y < endY) {
       // Vary spacing naturally (not uniform)
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 80 - 40, densityMultiplier); // density scales spacing
+      const spacing = this.scaleSpacing(baseSpacing, this.rng() * 80 - 40, densityMultiplier); // density scales spacing
       
       // Create gentle curve using sine wave
       const progress = (y - startY) / (endY - startY);
       const curve = Math.sin(progress * Math.PI * 2) * 0.1; // Gentle S-curve
       
       // Place trees with natural variation
-      const leftX = 0.15 + curve + (Math.random() * 0.05 - 0.025);
-      const rightX = 0.85 + curve + (Math.random() * 0.05 - 0.025);
+      const leftX = 0.15 + curve + (this.rng() * 0.05 - 0.025);
+      const rightX = 0.85 + curve + (this.rng() * 0.05 - 0.025);
       
       // Keep a guaranteed clear corridor in early sections
       const safeLeftX = Math.max(0.1, Math.min(safeMinX, leftX));
@@ -201,7 +203,7 @@ export class CourseGenerator {
       // Vary spacing
       const spacing = this.scaleSpacing(
         baseSpacing,
-        Math.random() * spacingJitter - spacingJitter / 2,
+        this.rng() * spacingJitter - spacingJitter / 2,
         densityMultiplier
       ); // density scales spacing
       
@@ -231,45 +233,6 @@ export class CourseGenerator {
   }
 
   /**
-   * Create dense trees with natural flow (harder section)
-   */
-  private createDenseTrees(startY: number, endY: number, densityMultiplier: number): CourseObject[] {
-    const objects: CourseObject[] = [];
-    let y = startY + 80;
-    const baseSpacing = 110;
-    
-    while (y < endY) {
-      // Vary spacing organically
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 40 - 20, densityMultiplier); // density scales spacing
-      
-      // Create sweeping curve
-      const progress = (y - startY) / (endY - startY);
-      const curve = Math.sin(progress * Math.PI * 4) * 0.18; // Sweeping S-curve
-      
-      // Place trees along the curve with variation
-      const baseTreeCount = 2 + Math.floor(Math.random() * 1.5); // 2-3 trees (lean toward 2)
-      const basePositions = [0.2, 0.45, 0.7, 0.85];
-      const numTrees = this.scaleTreeCount(baseTreeCount, densityMultiplier, basePositions.length - 1); // density scales count
-      
-      // Select positions and add curve
-      const selected: number[] = [];
-      for (let i = 0; i < numTrees; i++) {
-        let pos = basePositions[Math.floor(Math.random() * basePositions.length)];
-        while (selected.includes(pos)) {
-          pos = basePositions[Math.floor(Math.random() * basePositions.length)];
-        }
-        selected.push(pos);
-        const finalX = pos + curve + (Math.random() * 0.08 - 0.04);
-        objects.push({ type: 'tree', x: Math.max(0.1, Math.min(0.9, finalX)), y });
-      }
-      
-      y += spacing;
-    }
-    
-    return objects;
-  }
-
-  /**
    * Create flowing zigzag pattern (like carving turns)
    */
   private createZigzagPattern(startY: number, endY: number, densityMultiplier: number): CourseObject[] {
@@ -280,7 +243,7 @@ export class CourseGenerator {
     
     while (y < endY) {
       // Vary spacing for natural feel
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 40 - 20, densityMultiplier); // density scales spacing
+      const spacing = this.scaleSpacing(baseSpacing, this.rng() * 40 - 20, densityMultiplier); // density scales spacing
       
       // Create smooth transition between sides (not abrupt)
       const progress = (y - startY) / (endY - startY);
@@ -299,7 +262,7 @@ export class CourseGenerator {
       }
       
       // Gradually transition sides
-      if (Math.random() < 0.22) { // 22% chance to switch sides
+      if (this.rng() < 0.22) { // 22% chance to switch sides
         side = 1 - side;
       }
       
@@ -319,7 +282,7 @@ export class CourseGenerator {
     let patternType = 0;
     
     while (y < endY) {
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 24 - 12, densityMultiplier); // density scales spacing
+      const spacing = this.scaleSpacing(baseSpacing, this.rng() * 24 - 12, densityMultiplier); // density scales spacing
       const progress = (y - startY) / (endY - startY);
       const curve = Math.sin(progress * Math.PI * 5) * 0.18; // Flowing curve
       
@@ -360,21 +323,21 @@ export class CourseGenerator {
     const baseSpacing = 105;
     
     while (y < endY) {
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 20 - 10, densityMultiplier); // density scales spacing
+      const spacing = this.scaleSpacing(baseSpacing, this.rng() * 20 - 10, densityMultiplier); // density scales spacing
       const progress = (y - startY) / (endY - startY);
       const curve = Math.sin(progress * Math.PI * 6) * 0.2; // Stronger curve
       
       // Multiple trees with flow
-      const baseTreeCount = 2 + Math.floor(Math.random() * 2); // 2-3 trees
+      const baseTreeCount = 2 + Math.floor(this.rng() * 2); // 2-3 trees
       const basePositions = [0.15, 0.3, 0.5, 0.7, 0.85];
       const numTrees = this.scaleTreeCount(baseTreeCount, densityMultiplier, basePositions.length - 1); // density scales count
       
       const selected: number[] = [];
       while (selected.length < numTrees) {
-        const pos = basePositions[Math.floor(Math.random() * basePositions.length)];
+        const pos = basePositions[Math.floor(this.rng() * basePositions.length)];
         if (!selected.includes(pos)) {
           selected.push(pos);
-          const finalX = pos + curve + (Math.random() * 0.06 - 0.03);
+          const finalX = pos + curve + (this.rng() * 0.06 - 0.03);
           objects.push({ type: 'tree', x: Math.max(0.1, Math.min(0.9, finalX)), y });
         }
       }
@@ -395,7 +358,7 @@ export class CourseGenerator {
     let wallSide = 0; // 0 = left, 1 = right
     
     while (y < endY) {
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 28 - 14, densityMultiplier); // density scales spacing
+      const spacing = this.scaleSpacing(baseSpacing, this.rng() * 28 - 14, densityMultiplier); // density scales spacing
       const progress = (y - startY) / (endY - startY);
       const curve = Math.sin(progress * Math.PI * 8) * 0.24; // Strong flowing curve
       
@@ -412,7 +375,7 @@ export class CourseGenerator {
       }
       
       // Smooth transition between walls
-      if (Math.random() < 0.22) {
+      if (this.rng() < 0.22) {
         wallSide = 1 - wallSide;
       }
       
@@ -432,7 +395,7 @@ export class CourseGenerator {
     let side = 0;
     
     while (y < endY) {
-      const spacing = this.scaleSpacing(baseSpacing, Math.random() * 14 - 7, densityMultiplier); // density scales spacing
+      const spacing = this.scaleSpacing(baseSpacing, this.rng() * 14 - 7, densityMultiplier); // density scales spacing
       const progress = (y - startY) / (endY - startY);
       const curve = Math.sin(progress * Math.PI * 10) * 0.28; // Very tight, flowing turns
       
@@ -449,7 +412,7 @@ export class CourseGenerator {
       }
       
       // Quick transitions for tight turns
-      if (Math.random() < 0.32) {
+      if (this.rng() < 0.32) {
         side = 1 - side;
       }
       

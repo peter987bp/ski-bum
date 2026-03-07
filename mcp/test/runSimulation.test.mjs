@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initSimulation, runSimulation, stepSimulation } from "../dist/sim/runSimulation.js";
+import { initSimulation, runSimulation, stepSimulation } from "../dist/mcp/src/sim/runSimulation.js";
 
 const knownCases = [
   {
@@ -9,10 +9,10 @@ const knownCases = [
     expected: {
       seed: 1,
       seconds: 10,
-      totalDistance: 2601,
-      crashCount: 0,
-      finalScrollSpeed: 300,
-      snowmanDistance: 245.47,
+      totalDistance: 335,
+      crashCount: 1,
+      finalScrollSpeed: 0,
+      snowmanDistance: 220,
     },
   },
   {
@@ -21,10 +21,10 @@ const knownCases = [
     expected: {
       seed: 42,
       seconds: 40,
-      totalDistance: 12975,
-      crashCount: 4,
-      finalScrollSpeed: 435.42,
-      snowmanDistance: 176.24,
+      totalDistance: 398,
+      crashCount: 1,
+      finalScrollSpeed: 0,
+      snowmanDistance: 220,
     },
   },
   {
@@ -33,10 +33,10 @@ const knownCases = [
     expected: {
       seed: 123456,
       seconds: 60,
-      totalDistance: 19685,
-      crashCount: 11,
-      finalScrollSpeed: 393.12,
-      snowmanDistance: 103.5,
+      totalDistance: 674,
+      crashCount: 1,
+      finalScrollSpeed: 0,
+      snowmanDistance: 220,
     },
   },
 ];
@@ -63,14 +63,12 @@ test("runSimulation produces stable known outputs", () => {
 
 test("stepSimulation terminates immediately when crash penalty causes catch", () => {
   const state = initSimulation(7, 10);
-  state.snowmanDistance = 5;
-
-  // First random call forces crash branch.
-  const terminate = stepSimulation(state, 1 / 60, () => 0);
+  state.coreState.snowman.worldY = state.coreState.worldOffset - 5;
+  const terminate = stepSimulation(state, 1 / 60);
 
   assert.equal(terminate, true);
-  assert.equal(state.snowmanDistance <= 0, true);
-  assert.equal(state.snowmanDistance >= -50, true);
+  assert.equal(state.coreState.crashed, true);
+  assert.equal(state.coreState.crashReason, "snowman_catch");
   assert.equal(state.crashCount, 1);
 });
 

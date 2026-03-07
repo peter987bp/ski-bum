@@ -6,7 +6,7 @@ async function main() {
 
   const transport = new StdioClientTransport({
     command: "node",
-    args: ["./dist/index.js"],
+    args: ["./dist/mcp/src/index.js"],
     // IMPORTANT: run from the mcp folder so ./dist works
     cwd: process.cwd(),
   });
