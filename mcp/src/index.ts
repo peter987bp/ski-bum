@@ -1,7 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { runSimulation } from "./sim/runSimulation.js";
+import {
+  runSimulation,
+  SIMULATION_SECONDS_MAX,
+  SIMULATION_SECONDS_MIN,
+  SIMULATION_SEED_MAX,
+  SIMULATION_SEED_MIN,
+} from "./sim/runSimulation.js";
 
 const server = new McpServer({
   name: "ski-bum-local",
@@ -12,8 +18,8 @@ server.tool(
     "run_simulation",
     "Run a deterministic, headless Ski Bum simulation and return JSON metrics. Local-only.",
     {
-      seed: z.number().int().min(0).max(2_147_483_647),
-      seconds: z.number().int().min(1).max(300),
+      seed: z.number().int().min(SIMULATION_SEED_MIN).max(SIMULATION_SEED_MAX),
+      seconds: z.number().int().min(SIMULATION_SECONDS_MIN).max(SIMULATION_SECONDS_MAX),
     },
     async ({ seed, seconds }) => {
       const result = runSimulation({ seed, seconds });

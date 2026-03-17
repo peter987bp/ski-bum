@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preeval:batch": "npm --prefix mcp run build",
+    "eval:batch": "node scripts/eval-batch.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -13,4 +15,3 @@
     "vite": "^5.0.8"
   }
 }
-

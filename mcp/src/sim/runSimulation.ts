@@ -14,6 +14,16 @@ type SimulationInput = {
   seconds: number;
 };
 
+export type NormalizedSimulationInput = {
+  seed: number;
+  seconds: number;
+};
+
+export const SIMULATION_SEED_MIN = 0;
+export const SIMULATION_SEED_MAX = 2_147_483_647;
+export const SIMULATION_SECONDS_MIN = 1;
+export const SIMULATION_SECONDS_MAX = 300;
+
 export type SimulationMetrics = {
   seed: number;
   seconds: number;
@@ -46,10 +56,11 @@ function mulberry32(seed: number) {
 }
 
 export function initSimulation(seed: number, secondsInput: number): SimulationState {
-  const seconds = Math.max(1, Math.min(300, Math.floor(secondsInput)));
+  const normalized = normalizeSimulationInput({ seed, seconds: secondsInput });
+  const seconds = normalized.seconds;
   const dtSec = 1 / 60;
   const totalSteps = Math.floor(seconds / dtSec);
-  const rand = mulberry32(seed);
+  const rand = mulberry32(normalized.seed);
 
   const coreConfig = createDefaultGameCoreConfig({
     worldWidth: 800,
@@ -69,7 +80,7 @@ export function initSimulation(seed: number, secondsInput: number): SimulationSt
   });
 
   return {
-    seed,
+    seed: normalized.seed,
     seconds,
     dtSec,
     totalSteps,
@@ -99,7 +110,8 @@ export function stepSimulation(state: SimulationState, dtSec: number = state.dtS
 }
 
 export function runSimulation(input: SimulationInput): SimulationMetrics {
-  const state = initSimulation(input.seed, input.seconds);
+  const normalized = normalizeSimulationInput(input);
+  const state = initSimulation(normalized.seed, normalized.seconds);
 
   while (!stepSimulation(state, state.dtSec)) {
     // fixed-step deterministic loop
@@ -115,6 +127,39 @@ export function runSimulation(input: SimulationInput): SimulationMetrics {
     finalScrollSpeed: round2(state.coreState.scroll.currentSpeed),
     snowmanDistance: round2(snowmanDistance),
   };
+}
+
+export function normalizeSimulationInput(input: SimulationInput): NormalizedSimulationInput {
+  return {
+    seed: normalizeSimulationSeed(input.seed),
+    seconds: normalizeSimulationSeconds(input.seconds),
+  };
+}
+
+export function normalizeSimulationSeed(seed: number): number {
+  if (!Number.isInteger(seed)) {
+    throw new Error("Simulation seed must be an integer.");
+  }
+
+  if (seed < SIMULATION_SEED_MIN || seed > SIMULATION_SEED_MAX) {
+    throw new Error(`Simulation seed must be between ${SIMULATION_SEED_MIN} and ${SIMULATION_SEED_MAX}.`);
+  }
+
+  return seed;
+}
+
+export function normalizeSimulationSeconds(seconds: number): number {
+  if (!Number.isInteger(seconds)) {
+    throw new Error("Simulation seconds must be an integer.");
+  }
+
+  if (seconds < SIMULATION_SECONDS_MIN || seconds > SIMULATION_SECONDS_MAX) {
+    throw new Error(
+      `Simulation seconds must be between ${SIMULATION_SECONDS_MIN} and ${SIMULATION_SECONDS_MAX}.`,
+    );
+  }
+
+  return seconds;
 }
 
 function nextDeterministicInput(rand: () => number): GameInput {
