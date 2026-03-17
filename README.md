@@ -76,14 +76,14 @@ SKI_BUM/
 
 ## Local MCP Simulation Server
 
-This branch adds a local-only Model Context Protocol (MCP) server under mcp/ that allows deterministic, headless Ski Bum simulations to run without launching the browser. The purpose of this server is to enable reproducible gameplay tuning, deterministic difficulty testing, and headless simulation runs from a CLI or editor-integrated MCP client.
+This branch adds a local-only Model Context Protocol (MCP) server under `mcp/` that allows deterministic, headless Ski Bum simulations to run without launching the browser. The simulation workflow now includes both single-run evaluation (`run_simulation`) and batch evaluation from the repository root. The purpose is reproducible gameplay tuning, deterministic difficulty testing, and headless simulation runs from a CLI or editor-integrated MCP client.
 
 **Architecture**
 
 Transport: stdio (StdioServerTransport)
 Scope: local machine only (no network, no SaaS, no OAuth)
 Server name: ski-bum-local
-Tool exposed: run_simulation
+Tool exposed: `run_simulation`
 
 Tool: run_simulation
 
@@ -143,6 +143,62 @@ This returns raw JSON output:
 ```
 This can be used for deterministic testing, regression checks, tuning passes, or future CI integration.
 
+**Batch Evaluation**
+
+Batch evaluation is the fast path for comparing multiple deterministic simulation runs at the same duration. It executes the existing headless simulation once per seed, then reports aggregate metrics that are useful for crash-rate and difficulty checks.
+
+From the repository root:
+```bash
+npm run eval:batch -- 1,2,3,4,5 40
+```
+
+This script builds the MCP package first via `preeval:batch`, then runs `scripts/eval-batch.mjs`.
+
+CLI usage:
+```bash
+node scripts/eval-batch.mjs <seed_csv> <seconds>
+```
+
+Example:
+```bash
+node scripts/eval-batch.mjs 1,2,3,4,5 40
+```
+
+Output JSON shape:
+```json
+{
+  "seconds": 40,
+  "runCount": 5,
+  "avgCrashCount": 1,
+  "avgDistance": 944.4,
+  "minDistance": 335,
+  "maxDistance": 2259,
+  "avgSnowmanDistance": 220,
+  "crashRate": 100
+}
+```
+
+Aggregate metrics:
+- `seconds`: normalized duration used for every run in the batch.
+- `runCount`: number of seeds evaluated.
+- `avgCrashCount`: average `crashCount` from `run_simulation` across all runs.
+- `avgDistance`: average `totalDistance` across all runs.
+- `minDistance`: shortest `totalDistance` observed in the batch.
+- `maxDistance`: longest `totalDistance` observed in the batch.
+- `avgSnowmanDistance`: average final gap between the player progress and the snowman position.
+- `crashRate`: percentage of runs with at least one crash.
+
+Determinism expectations:
+- Identical seed CSV and `seconds` input produce identical JSON output.
+- Changing seeds changes the sampled deterministic runs.
+- Changing `seconds` changes the fixed simulation horizon for every run in the batch.
+
+Invalid input behavior:
+- Seeds must be a non-empty CSV of integers in the range `0` to `2147483647`.
+- `seconds` must be an integer in the range `1` to `300`.
+- Malformed CSV input is rejected as-is. For example, `1,,2` fails instead of being repaired.
+- Invalid input exits non-zero and prints the validation error message to stderr.
+
 **Determinism**
 
 Running:
@@ -164,7 +220,6 @@ Input validation enforced with Zod
 Future Direction
 
 **Planned improvements**
-Adding batch simulation tools for crash-rate and difficulty analysis
 Creating regression tooling for tuning validation
 This simulation layer provides the foundation for reproducible gameplay tuning independent of the rendering loop.
 
