@@ -5,9 +5,9 @@ import {
   createDefaultGameCoreConfig,
   createInitialGameState,
   stepGameFixed,
-} from "../../../src/core/gameCore.js";
-import { CourseGenerator } from "../../../src/course.js";
-import { buildCoreObstaclesFromCourseObjects } from "../../../src/core/progression.js";
+} from '../../../src/core/gameCore.js';
+import { CourseGenerator } from '../../../src/course.js';
+import { buildCoreObstaclesFromCourseObjects } from '../../../src/core/progression.js';
 
 type SimulationInput = {
   seed: number;
@@ -35,7 +35,6 @@ export type SimulationState = {
   rand: () => number;
 };
 
-// Small deterministic PRNG (Mulberry32)
 function mulberry32(seed: number) {
   let t = seed >>> 0;
   return function rand() {
@@ -121,12 +120,12 @@ export function runSimulation(input: SimulationInput): SimulationMetrics {
 function nextDeterministicInput(rand: () => number): GameInput {
   const roll = rand();
 
-  if (roll < 0.06) return { intent: "left", justPressed: true };
-  if (roll < 0.12) return { intent: "right", justPressed: true };
-  if (roll < 0.16) return { intent: "down", justPressed: true };
-  if (roll < 0.165) return { intent: "up", justPressed: true };
+  if (roll < 0.06) return { intent: 'left', justPressed: true };
+  if (roll < 0.12) return { intent: 'right', justPressed: true };
+  if (roll < 0.16) return { intent: 'down', justPressed: true };
+  if (roll < 0.165) return { intent: 'up', justPressed: true };
 
-  return { intent: "none", justPressed: false };
+  return { intent: 'none', justPressed: false };
 }
 
 function round2(value: number): number {
