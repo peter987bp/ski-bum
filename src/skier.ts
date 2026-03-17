@@ -25,19 +25,11 @@ export class Skier {
     this.height = state.height;
   }
 
-  /**
-   * @deprecated Gameplay stepping is owned by src/core/stepGame.ts.
-   */
-  setDirection(_direction: Direction): void {
-    throw new Error('Skier.setDirection is deprecated. Route commands through core stepGame().');
+  setDirection(direction: Direction): void {
+    this.direction = direction;
   }
 
-  /**
-   * @deprecated Gameplay stepping is owned by src/core/stepGame.ts.
-   */
-  update(_dtSec: number): void {
-    throw new Error('Skier.update is deprecated. Route frame updates through core stepGame().');
-  }
+  update(_dtSec: number): void {}
 
   static loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {

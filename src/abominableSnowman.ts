@@ -5,37 +5,24 @@ export class AbominableSnowman {
   position: Position;
   worldY: number;
   size: number;
+  xSpeed: number;
 
-  constructor(x: number, initialWorldY: number, size: number = 25) {
+  constructor(x: number, initialWorldY: number, size: number = 25, xSpeed: number = 1.15) {
     this.position = { x, y: 0 };
     this.worldY = initialWorldY;
     this.size = size;
+    this.xSpeed = xSpeed;
   }
 
   syncFromCore(state: CoreSnowmanState): void {
     this.position.x = state.x;
     this.worldY = state.worldY;
     this.size = state.size;
+    this.xSpeed = state.xSpeed;
   }
 
-  /**
-   * @deprecated Gameplay stepping is owned by src/core/stepGame.ts.
-   */
-  update(
-    _targetX: number,
-    _playerWorldY: number,
-    _playerScrollSpeed: number,
-    _dt: number,
-    _courseProgress: number
-  ): boolean {
-    throw new Error('AbominableSnowman.update is deprecated. Use core stepGame().');
-  }
-
-  /**
-   * @deprecated Core state initialization owns snowman spawn positioning.
-   */
-  reset(_playerWorldY: number, _spawnGap: number): void {
-    throw new Error('AbominableSnowman.reset is deprecated. Reinitialize core game state instead.');
+  reset(playerWorldY: number, spawnGap: number): void {
+    this.worldY = playerWorldY - spawnGap;
   }
 
   draw(

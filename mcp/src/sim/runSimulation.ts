@@ -1,7 +1,13 @@
-import { createInitialGameState, setGameRunning } from '../../../src/core/stepGame.js';
-import { GAME_CONFIG, MAX_SCROLL_SPEED_INCREASE, SIMULATION_CONFIG } from '../../../src/core/config.js';
-import { stepSimulationTick } from '../../../src/core/runtimeAdapters.js';
-import { CoreGameState, CoreTree, StepCommand } from '../../../src/core/types.js';
+import {
+  GameCoreConfig,
+  GameCoreState,
+  GameInput,
+  createDefaultGameCoreConfig,
+  createInitialGameState,
+  stepGameFixed,
+} from '../../../src/core/gameCore.js';
+import { CourseGenerator } from '../../../src/course.js';
+import { buildCoreObstaclesFromCourseObjects } from '../../../src/core/progression.js';
 
 type SimulationInput = {
   seed: number;
@@ -17,7 +23,18 @@ export type SimulationMetrics = {
   snowmanDistance: number;
 };
 
-// Small deterministic PRNG (Mulberry32)
+export type SimulationState = {
+  seed: number;
+  seconds: number;
+  dtSec: number;
+  totalSteps: number;
+  stepIndex: number;
+  crashCount: number;
+  coreConfig: GameCoreConfig;
+  coreState: GameCoreState;
+  rand: () => number;
+};
+
 function mulberry32(seed: number) {
   let t = seed >>> 0;
   return function rand() {
@@ -28,97 +45,89 @@ function mulberry32(seed: number) {
   };
 }
 
-function buildSimulationTrees(seed: number, targetDistance: number, canvasWidth: number): CoreTree[] {
+export function initSimulation(seed: number, secondsInput: number): SimulationState {
+  const seconds = Math.max(1, Math.min(300, Math.floor(secondsInput)));
+  const dtSec = 1 / 60;
+  const totalSteps = Math.floor(seconds / dtSec);
   const rand = mulberry32(seed);
-  const trees: CoreTree[] = [];
 
-  for (
-    let y = SIMULATION_CONFIG.treeStartY;
-    y <= targetDistance + SIMULATION_CONFIG.treeEndBuffer;
-    y += SIMULATION_CONFIG.treeStepY
-  ) {
-    const leftBase = canvasWidth * (SIMULATION_CONFIG.leftTreeBaseStart + rand() * SIMULATION_CONFIG.treeBaseRange);
-    const rightBase = canvasWidth * (SIMULATION_CONFIG.rightTreeBaseStart + rand() * SIMULATION_CONFIG.treeBaseRange);
-    const variance = (rand() - 0.5) * SIMULATION_CONFIG.treeVariance;
-
-    trees.push({
-      x: Math.max(
-        SIMULATION_CONFIG.treeMinXPadding,
-        Math.min(canvasWidth - SIMULATION_CONFIG.treeMinXPadding, leftBase + variance)
-      ),
-      y,
-      width: SIMULATION_CONFIG.treeWidthBase + rand() * SIMULATION_CONFIG.treeWidthRange,
-      height: SIMULATION_CONFIG.treeHeightBase + rand() * SIMULATION_CONFIG.treeHeightRange
-    });
-
-    trees.push({
-      x: Math.max(
-        SIMULATION_CONFIG.treeMinXPadding,
-        Math.min(canvasWidth - SIMULATION_CONFIG.treeMinXPadding, rightBase - variance)
-      ),
-      y: y + SIMULATION_CONFIG.rightTreeYOffset,
-      width: SIMULATION_CONFIG.treeWidthBase + rand() * SIMULATION_CONFIG.treeWidthRange,
-      height: SIMULATION_CONFIG.treeHeightBase + rand() * SIMULATION_CONFIG.treeHeightRange
-    });
-  }
-
-  return trees;
-}
-
-export function initSimulation(seed: number): CoreGameState {
-  const trees = buildSimulationTrees(seed, GAME_CONFIG.defaultTargetDistance, GAME_CONFIG.canvasWidth);
-  const state = createInitialGameState({
-    canvasWidth: GAME_CONFIG.canvasWidth,
-    canvasHeight: GAME_CONFIG.canvasHeight,
-    targetDistance: GAME_CONFIG.defaultTargetDistance,
-    trees,
-    startingScrollSpeed: GAME_CONFIG.baseScrollSpeed,
-    maxScrollSpeedIncrease: MAX_SCROLL_SPEED_INCREASE
+  const coreConfig = createDefaultGameCoreConfig({
+    worldWidth: 800,
+    playerStartX: 400,
+    playerScreenY: 200,
+    baseScrollSpeed: 1.45 * 60,
   });
 
-  return setGameRunning(state, true);
+  const courseGenerator = new CourseGenerator(coreConfig.worldWidth, rand);
+  const course = courseGenerator.createSimpleCourse(1.0);
+  const objects = courseGenerator.getAllObjects(course);
+  const obstacles = buildCoreObstaclesFromCourseObjects(objects, rand);
+  coreConfig.targetDistance = course.totalLength;
+  const coreState = createInitialGameState({
+    config: coreConfig,
+    obstacles,
+  });
+
+  return {
+    seed,
+    seconds,
+    dtSec,
+    totalSteps,
+    stepIndex: 0,
+    crashCount: 0,
+    coreConfig,
+    coreState,
+    rand,
+  };
 }
 
-export function simulationCommandsForStep(step: number): StepCommand[] {
-  const atMs = (step * 1000) / SIMULATION_CONFIG.fixedFps;
-  const cycle = step % 180;
+export function stepSimulation(state: SimulationState, dtSec: number = state.dtSec): boolean {
+  if (state.coreState.crashed || state.coreState.runComplete || state.stepIndex >= state.totalSteps) {
+    return true;
+  }
 
-  if (step === 0) return [{ direction: 'down', atMs }];
-  if (cycle === 45) return [{ direction: 'left', atMs }];
-  if (cycle === 90) return [{ direction: 'right', atMs }];
-  if (cycle === 135) return [{ direction: 'down', atMs }];
+  const input = nextDeterministicInput(state.rand);
+  state.coreState = stepGameFixed(state.coreState, input, dtSec, 1, state.coreConfig);
+  state.stepIndex += 1;
 
-  return [];
-}
+  if (state.coreState.crashed) {
+    state.crashCount += 1;
+    return true;
+  }
 
-export function stepSimulation(state: CoreGameState, step: number): CoreGameState {
-  return stepSimulationTick(
-    state,
-    step,
-    simulationCommandsForStep,
-    SIMULATION_CONFIG.fixedDtFrames
-  );
+  return state.coreState.runComplete || state.stepIndex >= state.totalSteps;
 }
 
 export function runSimulation(input: SimulationInput): SimulationMetrics {
-  const seconds = Math.max(1, Math.min(300, Math.floor(input.seconds)));
-  const steps = seconds * SIMULATION_CONFIG.fixedFps;
+  const state = initSimulation(input.seed, input.seconds);
 
-  let state = initSimulation(input.seed);
-
-  for (let i = 0; i < steps; i++) {
-    state = stepSimulation(state, i);
-    if (state.crashed || state.runComplete) {
-      break;
-    }
+  while (!stepSimulation(state, state.dtSec)) {
+    // fixed-step deterministic loop
   }
 
+  const snowmanDistance = state.coreState.worldOffset - state.coreState.snowman.worldY;
+
   return {
-    seed: input.seed,
-    seconds,
-    totalDistance: Math.round(state.distanceTraveled),
+    seed: state.seed,
+    seconds: state.seconds,
+    totalDistance: Math.round(state.coreState.distanceTraveled),
     crashCount: state.crashCount,
-    finalScrollSpeed: Math.round(state.currentScrollSpeed * 100) / 100,
-    snowmanDistance: Math.round((state.worldOffset - state.snowman.worldY) * 100) / 100
+    finalScrollSpeed: round2(state.coreState.scroll.currentSpeed),
+    snowmanDistance: round2(snowmanDistance),
   };
+}
+
+function nextDeterministicInput(rand: () => number): GameInput {
+  const roll = rand();
+
+  if (roll < 0.06) return { intent: 'left', justPressed: true };
+  if (roll < 0.12) return { intent: 'right', justPressed: true };
+  if (roll < 0.16) return { intent: 'down', justPressed: true };
+  if (roll < 0.165) return { intent: 'up', justPressed: true };
+
+  return { intent: 'none', justPressed: false };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
