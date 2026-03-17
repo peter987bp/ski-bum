@@ -5,7 +5,7 @@ import { CourseGenerator, Course, CourseObject } from './course';
 import { AbominableSnowman } from './abominableSnowman';
 import { createInitialGameState, setGameRunning } from './core/stepGame';
 import { GAME_CONFIG, MAX_SCROLL_SPEED_INCREASE } from './core/config.js';
-import { stepBrowserFrame } from './core/runtimeAdapters.js';
+import { keyToStepDirection, stepBrowserFrame } from './core/runtimeAdapters.js';
 import { CoreGameState, CoreTree, StepCommand } from './core/types';
 const LEGACY_TREE_SIZE_VARIATION_MIN = 0.8;
 const LEGACY_TREE_SIZE_VARIATION_RANGE = 0.4;
@@ -539,19 +539,13 @@ export class Game {
   private setupEventListeners(): void {
     window.addEventListener('keydown', (e) => {
       const atMs = performance.now();
+      const direction = keyToStepDirection(e.key);
+      if (direction) {
+        this.pendingStepCommands.push({ direction, atMs });
+        return;
+      }
+
       switch (e.key) {
-        case 'ArrowLeft':
-          this.pendingStepCommands.push({ direction: 'left', atMs });
-          break;
-        case 'ArrowRight':
-          this.pendingStepCommands.push({ direction: 'right', atMs });
-          break;
-        case 'ArrowDown':
-          this.pendingStepCommands.push({ direction: 'down', atMs });
-          break;
-        case 'ArrowUp':
-          this.pendingStepCommands.push({ direction: 'up', atMs });
-          break;
         case 'h':
         case 'H':
           this.debugHudEnabled = !this.debugHudEnabled;
