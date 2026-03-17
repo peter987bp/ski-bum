@@ -96,10 +96,10 @@ Output:
 {
   "seed": 42,
   "seconds": 40,
-  "totalDistance": 13356,
-  "crashCount": 3,
-  "finalScrollSpeed": 463.82,
-  "snowmanDistance": 181.58
+  "totalDistance": 3940,
+  "crashCount": 0,
+  "finalScrollSpeed": 1.85,
+  "snowmanDistance": 129.7
 }
 ```
 
@@ -107,9 +107,9 @@ Output:
 The simulation runs headlessly with:
 A fixed timestep (1/60)
 A seeded pseudo-random number generator
-No DOM or Canvas dependencies
+Shared stepping logic imported from `src/core/`
+No DOM or Canvas dependencies in the simulation path
 Deterministic behavior for identical inputs
-The current implementation uses placeholder game-like logic and is designed to be replaced with shared game-core logic in a future refactor.
 
 **Running the MCP Server**
 From the repository root:
@@ -139,7 +139,7 @@ node call-run-simulation.mjs 42 40
 ```
 This returns raw JSON output:
 ```JSON
-{"seed":42,"seconds":40,"totalDistance":13356,"crashCount":3,"finalScrollSpeed":463.82,"snowmanDistance":181.58}
+{"seed":42,"seconds":40,"totalDistance":3940,"crashCount":0,"finalScrollSpeed":1.85,"snowmanDistance":129.7}
 ```
 This can be used for deterministic testing, regression checks, tuning passes, or future CI integration.
 
@@ -150,7 +150,8 @@ Running:
 node call-run-simulation.mjs 42 40
 ```
 multiple times will produce identical output.
-Changing either seed or seconds will deterministically change the results.
+Changing `seconds` deterministically changes run length and summary metrics.
+Changing `seed` deterministically changes generated simulation world state; summary metrics can still coincide for some seeds/time windows with the fixed command script.
 
 **Security Model**
 
@@ -163,9 +164,6 @@ Input validation enforced with Zod
 Future Direction
 
 **Planned improvements**
-
-Extracting shared src/core/ game logic
-Replacing placeholder simulation logic with real gameplay state stepping
 Adding batch simulation tools for crash-rate and difficulty analysis
 Creating regression tooling for tuning validation
 This simulation layer provides the foundation for reproducible gameplay tuning independent of the rendering loop.
@@ -211,7 +209,10 @@ cd mcp
 npm run dev      # Run the local MCP server with tsx
 npm run build    # Compile the MCP server to dist/
 npm run start    # Run the compiled MCP server
+npm test         # Build first, then run source-based tests via tsx --test
 ```
+
+`mcp` tests execute against source modules (not `dist` imports), and `pretest` enforces a clean build before each test run.
 
 ## Notes & Debugging
 

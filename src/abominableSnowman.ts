@@ -1,4 +1,5 @@
 import { Position } from './types';
+import { CoreSnowmanState } from './core/types.js';
 
 export class AbominableSnowman {
   position: Position;
@@ -11,6 +12,13 @@ export class AbominableSnowman {
     this.worldY = initialWorldY;
     this.size = size;
     this.xSpeed = xSpeed;
+  }
+
+  syncFromCore(state: CoreSnowmanState): void {
+    this.position.x = state.x;
+    this.worldY = state.worldY;
+    this.size = state.size;
+    this.xSpeed = state.xSpeed;
   }
 
   reset(playerWorldY: number, spawnGap: number): void {

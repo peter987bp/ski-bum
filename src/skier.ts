@@ -1,14 +1,35 @@
-import { Position } from './types';
+import { Position, Velocity, Direction } from './types';
+import { CoreSkierState } from './core/types.js';
 
 export class Skier {
   position: Position;
+  velocity: Velocity;
+  direction: Direction;
   static sharedImage: HTMLImageElement | null = null;
   width: number = 30;
   height: number = 30;
 
   constructor(x: number, y: number) {
     this.position = { x, y };
+    this.velocity = { vx: 0, vy: 0 };
+    this.direction = 'down';
   }
+
+  syncFromCore(state: CoreSkierState): void {
+    this.position.x = state.x;
+    this.position.y = state.y;
+    this.velocity.vx = state.vx;
+    this.velocity.vy = state.vy;
+    this.direction = state.direction;
+    this.width = state.width;
+    this.height = state.height;
+  }
+
+  setDirection(direction: Direction): void {
+    this.direction = direction;
+  }
+
+  update(_dtSec: number): void {}
 
   static loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
