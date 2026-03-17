@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initSimulation, runSimulation, stepSimulation } from "../dist/mcp/src/sim/runSimulation.js";
+import {
+  initSimulation,
+  runSimulation,
+  stepSimulation,
+} from "../dist/mcp/src/sim/runSimulation.js";
 
 const knownCases = [
   {
@@ -85,4 +89,26 @@ test("boundary seed/seconds cases are deterministic", () => {
     const second = runSimulation(input);
     assert.deepEqual(second, first);
   }
+});
+
+test("runSimulation rejects invalid seeds", () => {
+  assert.throws(
+    () => runSimulation({ seed: 1.5, seconds: 40 }),
+    /seed must be an integer/i,
+  );
+  assert.throws(
+    () => runSimulation({ seed: -1, seconds: 40 }),
+    /seed must be between/i,
+  );
+});
+
+test("runSimulation rejects invalid seconds", () => {
+  assert.throws(
+    () => runSimulation({ seed: 1, seconds: 40.5 }),
+    /seconds must be an integer/i,
+  );
+  assert.throws(
+    () => runSimulation({ seed: 1, seconds: 301 }),
+    /seconds must be between/i,
+  );
 });
